@@ -6,6 +6,7 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
+from langchain_core.prompts import PromptTemplate
 from htmltemplates import css, user_template, bot_template
 
 
@@ -40,12 +41,32 @@ def get_vector_store(text_chunks):
     return vector_store
 
 def get_conversation_chain(vector_store):
+    qa_prompt = PromptTemplate(
+        template=(
+            "You are a chemistry and physics tutor.\n"
+            "Use the retrieved context first.\n"
+            "If context is incomplete, use your own subject knowledge to answer clearly.\n"
+            "If you use your own knowledge, mention: 'Based on general chemistry/physics knowledge'.\n"
+            "Give concise, correct explanations and include examples when helpful.\n\n"
+            "Context:\n{context}\n\n"
+            "Question: {question}\n"
+            "Answer:"
+        ),
+        input_variables=["context", "question"],
+    )
+
     llm = ChatOpenAI(model_name="gpt-4.1-nano", temperature=0)
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+    retriever = vector_store.as_retriever(
+        search_type="mmr",
+        search_kwargs={"k": 8, "fetch_k": 24},
+    )
+
     conversation_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
-        retriever=vector_store.as_retriever(),
-        memory=memory
+        retriever=retriever,
+        memory=memory,
+        combine_docs_chain_kwargs={"prompt": qa_prompt},
     )
     return conversation_chain
 
