@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from langchain_text_splitters import CharacterTextSplitter
@@ -78,6 +79,11 @@ def handle_user_input(user_question):
     response = st.session_state.conversation({"question": user_question})
     st.session_state.chat_history = response["chat_history"]
 
+
+def render_chat_history():
+    if not st.session_state.chat_history:
+        return
+
     for i, message in enumerate(st.session_state.chat_history):
         if i % 2 == 0:
             st.write(user_template.replace("{{MSG}}", message.content), unsafe_allow_html=True)
@@ -107,14 +113,22 @@ def main():
     if st.session_state.conversation is None:
         st.info("No usable default data found yet. Put PDFs in /data or upload PDFs from sidebar and click Process.")
 
-    user_question = st.text_input(
-        "Message",
-        key="user_question",
-        placeholder="Ask a question about physics or chemistry...",
-        label_visibility="collapsed",
-    )
+    user_question = st.chat_input("Ask a question about physics or chemistry...")
     if user_question:
         handle_user_input(user_question)
+
+    render_chat_history()
+
+    if st.session_state.chat_history:
+        # Auto-scroll to latest message after rerender.
+        components.html(
+            """
+            <script>
+                window.parent.scrollTo(0, document.body.scrollHeight);
+            </script>
+            """,
+            height=0,
+        )
 
     with st.sidebar:
         st.subheader("Upload extra teacher material/important topic pdfs here to enhance the assistant's knowledge!(dont forget to click process after uploading)")
