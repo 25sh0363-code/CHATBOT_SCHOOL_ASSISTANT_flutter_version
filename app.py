@@ -294,21 +294,21 @@ def main():
                 st.session_state.vector_store = final_vector_store
                 st.session_state.conversation = get_conversation_chain(final_vector_store)
                 get_default_vector_store_cached.clear()
-        st.table(st.title("quick math symbols to copy and paste into your questions for better formatting")
-                 [
-                    {"Symbol": "theta", "Copy": "theta"},
-                    {"Symbol": "alpha", "Copy": "alpha"},
-                    {"Symbol": "beta", "Copy": "beta"},
-                    {"Symbol": "gamma", "Copy": "gamma"},
-                    {"Symbol": "Delta", "Copy": "Delta"},
-                    {"Symbol": "times", "Copy": "times"},
-                    {"Symbol": "cdot", "Copy": "cdot"},
-                    {"Symbol": "cos", "Copy": "cos"},
-                    {"Symbol": "sin", "Copy": "sin"},
-                    {"Symbol": "tan", "Copy": "tan"},
-                    {"Symbol": "pi", "Copy": "pi"},
-                 ]
-            
+        st.subheader("Quick math symbols to copy and paste")
+        st.table(
+            [
+                {"Symbol": "theta", "Copy": "theta"},
+                {"Symbol": "alpha", "Copy": "alpha"},
+                {"Symbol": "beta", "Copy": "beta"},
+                {"Symbol": "gamma", "Copy": "gamma"},
+                {"Symbol": "Delta", "Copy": "Delta"},
+                {"Symbol": "times", "Copy": "times"},
+                {"Symbol": "cdot", "Copy": "cdot"},
+                {"Symbol": "cos", "Copy": "cos"},
+                {"Symbol": "sin", "Copy": "sin"},
+                {"Symbol": "tan", "Copy": "tan"},
+                {"Symbol": "pi", "Copy": "pi"},
+            ]
         )
 
 
