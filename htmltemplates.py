@@ -1,17 +1,18 @@
 css = """
 <style>
 :root {
-    --bg: #f7f7f8;
-    --panel: #ffffff;
-    --line: #e5e7eb;
-    --user: #e9f2ff;
-    --assistant: #ffffff;
-    --text: #111827;
-    --muted: #6b7280;
+    --bg: #0b0f14;
+    --bg-soft: #121821;
+    --panel: #161d28;
+    --line: #2a3648;
+    --user: #0f3a2c;
+    --assistant: #1a2330;
+    --text: #e6edf6;
+    --muted: #9aa9bc;
 }
 
 .stApp {
-    background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 55%);
+    background: radial-gradient(circle at top, #172030 0%, var(--bg) 60%);
     color: var(--text);
 }
 
@@ -43,7 +44,7 @@ css = """
     font-size: 0.72rem;
     flex-shrink: 0;
     border: 1px solid var(--line);
-    background: #ffffff;
+    background: #0e141d;
     color: var(--muted);
 }
 
@@ -55,7 +56,7 @@ css = """
     line-height: 1.55;
     color: var(--text);
     background: var(--assistant);
-    box-shadow: 0 1px 0 rgba(17, 24, 39, 0.03);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 
 .chat-message.user .message {
@@ -68,13 +69,24 @@ css = """
 
 [data-testid="stSidebar"] {
     border-right: 1px solid var(--line);
-    background: #fafafa;
+    background: var(--bg-soft);
 }
 
 [data-testid="stTextInputRootElement"] input {
     border-radius: 999px;
-    border: 1px solid #d1d5db;
-    background: #ffffff;
+    border: 1px solid var(--line);
+    background: #0e141d;
+    color: var(--text);
+}
+
+/* Keep Streamlit text readable in dark mode. */
+h1, h2, h3, p, label, span, div {
+    color: var(--text);
+}
+
+[data-testid="stAlert"] {
+    background: #14202f;
+    border: 1px solid var(--line);
 }
 </style>
 """
