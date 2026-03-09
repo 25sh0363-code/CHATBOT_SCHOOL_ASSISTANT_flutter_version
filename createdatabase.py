@@ -12,6 +12,8 @@ DATA_DIR = PROJECT_ROOT / "data"
 VECTOR_DIR = PROJECT_ROOT / "vectorstore" / "faiss_index"
 
 
+
+
 def get_pdf_files() -> list[Path]:
     return sorted(DATA_DIR.glob("*.pdf"))
 

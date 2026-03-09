@@ -1,5 +1,6 @@
 import streamlit as st
 import streamlit.components.v1 as components
+import base64
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from langchain_text_splitters import CharacterTextSplitter
@@ -8,6 +9,7 @@ from langchain_community.vectorstores import FAISS
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain_core.prompts import PromptTemplate
+from langchain_core.messages import HumanMessage, AIMessage
 from htmltemplates import css, user_template, bot_template
 
 
@@ -75,9 +77,62 @@ def handle_user_input(user_question):
     if st.session_state.conversation is None:
         st.warning("No knowledge base is loaded. Build default DB first or upload PDFs and click Process.")
         return
+    
 
     response = st.session_state.conversation({"question": user_question})
     st.session_state.chat_history = response["chat_history"]
+
+
+def get_retrieved_context(question: str) -> str:
+    vector_store = st.session_state.get("vector_store")
+    if vector_store is None:
+        return ""
+
+    docs = vector_store.as_retriever(
+        search_type="mmr",
+        search_kwargs={"k": 4, "fetch_k": 16},
+    ).get_relevant_documents(question)
+
+    if not docs:
+        return ""
+
+    return "\n\n".join(doc.page_content[:1200] for doc in docs)
+
+
+def handle_user_input_with_image(user_question, image_file):
+    image_bytes = image_file.getvalue()
+    encoded = base64.b64encode(image_bytes).decode("utf-8")
+    mime_type = image_file.type or "image/jpeg"
+    retrieved_context = get_retrieved_context(user_question)
+
+    prompt_text = (
+        "You are a chemistry and physics tutor. Analyze the attached image and answer the question.\n"
+        "Use retrieved textbook context first when relevant, then complete with your own knowledge.\n"
+        "If the image includes formulas/structures/diagrams, interpret them clearly.\n\n"
+        f"Retrieved context:\n{retrieved_context if retrieved_context else 'No additional context retrieved.'}\n\n"
+        f"Question: {user_question}"
+    )
+
+    vision_llm = ChatOpenAI(model_name="gpt-4.1-mini", temperature=0)
+    ai_message = vision_llm.invoke(
+        [
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": prompt_text},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{encoded}"},
+                    },
+                ]
+            )
+        ]
+    )
+
+    if st.session_state.chat_history is None:
+        st.session_state.chat_history = []
+
+    st.session_state.chat_history.append(HumanMessage(content=f"{user_question} (with image)"))
+    st.session_state.chat_history.append(AIMessage(content=ai_message.content))
 
 
 def render_chat_history():
@@ -91,6 +146,10 @@ def render_chat_history():
             st.write(bot_template.replace("{{MSG}}", message.content), unsafe_allow_html=True)
 
 
+                                                                
+
+
+
 def main():
     load_dotenv()
     st.set_page_config(page_title="YOUR CHEMISTRY AND PHYSICS ASSISTANT", page_icon=":atom_symbol:", layout="wide")
@@ -100,10 +159,13 @@ def main():
         st.session_state.conversation = None
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = None
+    if "vector_store" not in st.session_state:
+        st.session_state.vector_store = None
 
     if st.session_state.conversation is None:
         existing_vector_store = get_existing_vector_store()
         if existing_vector_store is not None:
+            st.session_state.vector_store = existing_vector_store
             st.session_state.conversation = get_conversation_chain(existing_vector_store)
     
 
@@ -114,8 +176,16 @@ def main():
         st.info("No usable default data found yet. Put PDFs in /data or upload PDFs from sidebar and click Process.")
 
     user_question = st.chat_input("Ask a question about physics or chemistry...")
+    add_image = st.file_uploader(
+        "Upload an image to include in your question (optional)",
+        type=["png", "jpg", "jpeg"],
+        key="image_uploader",
+    )
     if user_question:
-        handle_user_input(user_question)
+        if add_image is not None:
+            handle_user_input_with_image(user_question, add_image)
+        else:
+            handle_user_input(user_question)
 
     render_chat_history()
 
@@ -155,6 +225,7 @@ def main():
 
                 st.success("PDF files processed successfully!")
 
+                st.session_state.vector_store = final_vector_store
                 st.session_state.conversation = get_conversation_chain(final_vector_store)
 
 
