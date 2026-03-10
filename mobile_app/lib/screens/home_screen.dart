@@ -8,7 +8,14 @@ import 'timetable_screen.dart';
 import 'worksheet_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({
+    super.key,
+    required this.isDarkMode,
+    required this.onToggleTheme,
+  });
+
+  final bool isDarkMode;
+  final Future<void> Function() onToggleTheme;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -32,6 +39,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Welcome Student'),
+        actions: [
+          IconButton(
+            tooltip: widget.isDarkMode ? 'Switch to light mode' : 'Switch to dark mode',
+            onPressed: widget.onToggleTheme,
+            icon: Icon(widget.isDarkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+          ),
+        ],
       ),
       body: pages[_index],
       bottomNavigationBar: NavigationBar(

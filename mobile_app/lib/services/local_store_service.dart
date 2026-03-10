@@ -10,6 +10,7 @@ class LocalStoreService {
   static const String _testsKey = 'tests_v1';
   static const String _timetableKey = 'timetable_v1';
   static const String _worksheetsKey = 'worksheets_v1';
+  static const String _darkModeKey = 'dark_mode_v1';
 
   Future<List<TestRecord>> loadTests() async {
     final prefs = await SharedPreferences.getInstance();
@@ -72,5 +73,15 @@ class LocalStoreService {
     final prefs = await SharedPreferences.getInstance();
     final payload = jsonEncode(worksheets.map((e) => e.toJson()).toList());
     await prefs.setString(_worksheetsKey, payload);
+  }
+
+  Future<bool> loadDarkModeEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_darkModeKey) ?? false;
+  }
+
+  Future<void> saveDarkModeEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_darkModeKey, enabled);
   }
 }
