@@ -22,13 +22,19 @@ class TestRecord {
     return (score! * 100) / maxMarks;
   }
 
-  TestRecord copyWith({double? score}) {
+  TestRecord copyWith({
+    String? title,
+    String? subject,
+    DateTime? testDate,
+    double? maxMarks,
+    double? score,
+  }) {
     return TestRecord(
       id: id,
-      title: title,
-      subject: subject,
-      testDate: testDate,
-      maxMarks: maxMarks,
+      title: title ?? this.title,
+      subject: subject ?? this.subject,
+      testDate: testDate ?? this.testDate,
+      maxMarks: maxMarks ?? this.maxMarks,
       score: score ?? this.score,
     );
   }

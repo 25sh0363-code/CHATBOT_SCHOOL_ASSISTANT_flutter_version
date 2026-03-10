@@ -139,6 +139,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -155,10 +158,17 @@ class _ChatScreenState extends State<ChatScreen> {
                       final align =
                           msg.isUser ? Alignment.centerRight : Alignment.centerLeft;
                       final bgColor = msg.isUser
-                          ? const Color(0xFFD6EAF8)
-                          : msg.isError
-                              ? const Color(0xFFF9D6D6)
-                              : const Color(0xFFEFEFEF);
+                        ? (isDark ? const Color(0xFF1E3A4E) : const Color(0xFFD6EAF8))
+                        : msg.isError
+                          ? (isDark
+                            ? const Color(0xFF5A2428)
+                            : const Color(0xFFF9D6D6))
+                          : (isDark ? const Color(0xFF22303C) : const Color(0xFFEFEFEF));
+                      final textColor = msg.isUser
+                        ? (isDark ? Colors.white : const Color(0xFF10212E))
+                        : msg.isError
+                          ? (isDark ? const Color(0xFFFFD8D8) : const Color(0xFF4A1111))
+                          : (isDark ? const Color(0xFFEAF3FB) : const Color(0xFF1D2A35));
 
                       return Align(
                         alignment: align,
@@ -170,7 +180,10 @@ class _ChatScreenState extends State<ChatScreen> {
                             color: bgColor,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Text(msg.text),
+                          child: Text(
+                            msg.text,
+                            style: TextStyle(color: textColor),
+                          ),
                         ),
                       );
                     },
