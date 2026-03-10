@@ -22,6 +22,34 @@ class ChatApiService {
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return _readAnswer(data);
+  }
+
+  Future<String> sendMessageWithImage({
+    required String question,
+    required String imageBase64,
+    required String mimeType,
+  }) async {
+    final uri = Uri.parse('$baseUrl/chat/image');
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'question': question,
+        'image_base64': imageBase64,
+        'mime_type': mimeType,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error ${response.statusCode}: ${response.body}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return _readAnswer(data);
+  }
+
+  String _readAnswer(Map<String, dynamic> data) {
     final answer = data['answer'];
     if (answer is! String || answer.trim().isEmpty) {
       throw Exception('Invalid response from backend.');

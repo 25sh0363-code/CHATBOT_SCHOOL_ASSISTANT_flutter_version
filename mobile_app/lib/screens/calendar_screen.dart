@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../models/test_record.dart';
+import '../models/timetable_entry.dart';
 import '../services/local_store_service.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -17,6 +18,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   List<TestRecord> _tests = [];
+  List<TimetableEntry> _entries = [];
 
   @override
   void initState() {
@@ -25,11 +27,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _load() async {
-    final items = await widget.storeService.loadTests();
-    setState(() => _tests = items);
+    final tests = await widget.storeService.loadTests();
+    final entries = await widget.storeService.loadTimetableEntries();
+    setState(() {
+      _tests = tests;
+      _entries = entries;
+    });
   }
 
-  List<TestRecord> _eventsForDay(DateTime day) {
+  List<TestRecord> _testsForDay(DateTime day) {
     return _tests.where((test) {
       return test.testDate.year == day.year &&
           test.testDate.month == day.month &&
@@ -37,9 +43,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }).toList();
   }
 
+  List<TimetableEntry> _entriesForDay(DateTime day) {
+    return _entries.where((entry) {
+      return entry.date.year == day.year &&
+          entry.date.month == day.month &&
+          entry.date.day == day.day;
+    }).toList();
+  }
+
+  List<Object> _eventsForDay(DateTime day) {
+    return <Object>[
+      ..._testsForDay(day),
+      ..._entriesForDay(day),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
-    final events = _eventsForDay(_selectedDay);
+    final tests = _testsForDay(_selectedDay);
+    final entries = _entriesForDay(_selectedDay);
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -48,7 +70,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: TableCalendar<TestRecord>(
+              child: TableCalendar<Object>(
                 firstDay: DateTime(2020),
                 lastDay: DateTime(2100),
                 focusedDay: _focusedDay,
@@ -75,18 +97,31 @@ class _CalendarScreenState extends State<CalendarScreen> {
           SizedBox(
             height: 260,
             child: Card(
-              child: events.isEmpty
-                  ? const Center(child: Text('No tests scheduled for selected day'))
-                  : ListView.builder(
-                      itemCount: events.length,
-                      itemBuilder: (context, index) {
-                        final item = events[index];
-                        return ListTile(
-                          title: Text(item.title),
-                          subtitle: Text(item.subject),
-                          trailing: Text('Max ${item.maxMarks.toStringAsFixed(0)}'),
-                        );
-                      },
+              child: (tests.isEmpty && entries.isEmpty)
+                  ? const Center(child: Text('No tests or timetable entries for selected day'))
+                  : ListView(
+                      children: [
+                        if (tests.isNotEmpty)
+                          const ListTile(
+                            title: Text('Tests', style: TextStyle(fontWeight: FontWeight.w600)),
+                          ),
+                        for (final item in tests)
+                          ListTile(
+                            title: Text(item.title),
+                            subtitle: Text(item.subject),
+                            trailing: Text('Max ${item.maxMarks.toStringAsFixed(0)}'),
+                          ),
+                        if (entries.isNotEmpty)
+                          const ListTile(
+                            title: Text('Timetable', style: TextStyle(fontWeight: FontWeight.w600)),
+                          ),
+                        for (final entry in entries)
+                          ListTile(
+                            title: Text(entry.subject),
+                            subtitle: Text(entry.notes.isEmpty ? 'Class slot' : entry.notes),
+                            trailing: Text('${entry.startTime}-${entry.endTime}'),
+                          ),
+                      ],
                     ),
             ),
           ),

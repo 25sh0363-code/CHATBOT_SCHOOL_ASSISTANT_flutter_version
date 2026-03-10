@@ -1,11 +1,11 @@
 {
-    "name": "school_assistant_mobile",
-    "short_name": "school_assistant_mobile",
+    "name": "SINOVATE",
+    "short_name": "SINOVATE",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "SINOVATE learning assistant.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

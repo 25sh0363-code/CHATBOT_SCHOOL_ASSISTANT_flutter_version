@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'screens/home_screen.dart';
-import 'screens/login_screen.dart';
-import 'services/auth_service.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -18,23 +16,13 @@ class SchoolAssistantApp extends StatefulWidget {
 }
 
 class _SchoolAssistantAppState extends State<SchoolAssistantApp> {
-  final AuthService _authService = AuthService();
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'School Assistant',
+      title: 'SINOVATE',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: ValueListenableBuilder<bool>(
-        valueListenable: _authService.isSignedIn,
-        builder: (context, signedIn, _) {
-          if (!signedIn) {
-            return LoginScreen(authService: _authService);
-          }
-          return HomeScreen(authService: _authService);
-        },
-      ),
+      home: const HomeScreen(),
     );
   }
 }
