@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: school-assistant-backend
+    env: python
+    plan: free
+    branch: main
+    rootDir: .
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn backend_api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: VECTORSTORE_ZIP_URL
+        sync: false
