@@ -4,11 +4,24 @@ __pycache__/
 *.pyc
 venv/
 env/
+.venv/
 
 # Build outputs
 dist/
 build/
 *.egg-info/
+
+# Flutter
+mobile_app/.dart_tool/
+mobile_app/.idea/
+mobile_app/.packages
+mobile_app/build/
+mobile_app/.flutter-plugins
+mobile_app/.flutter-plugins-dependencies
+mobile_app/.metadata
+mobile_app/ios/Pods/
+mobile_app/macos/Pods/
+mobile_app/**/.symlinks/
 
 # IDE
 .vscode/

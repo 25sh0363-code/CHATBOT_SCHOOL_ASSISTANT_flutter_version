@@ -1,0 +1,27 @@
+name: school_assistant_mobile
+description: School Assistant Flutter starter app
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  google_sign_in: ^6.2.1
+  shared_preferences: ^2.3.2
+  table_calendar: ^3.1.2
+  fl_chart: ^0.69.0
+  http: ^1.2.2
+  archive: ^3.6.1
+  path_provider: ^2.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

@@ -1,76 +1,95 @@
-# 🎓 School Assistant — Chemistry & Physics Chatbot
+# School Assistant (Flutter + FastAPI)
 
-An AI-powered school assistant built to help students understand **Chemistry** and **Physics** through conversational Q&A, textbook-grounded retrieval, and optional image-based question analysis.
+Chemistry and Physics assistant with:
+- Flutter app (`mobile_app/`)
+- FastAPI backend (`backend_api.py`)
+- FAISS vector database (`vectorstore/faiss_index`)
 
----
+## What gets installed where
 
-## ✨ Highlights
+- APK includes all Flutter/Dart dependencies at build time.
+- Android device does NOT install Python packages.
+- Python dependencies are only on your backend machine/server.
+- Vector DB is used by backend now, and optional vector ZIP download exists in app.
 
-- 📘 Retrieval-augmented answers from PDF study material
-- 💬 Conversational memory for follow-up questions
-- 🖼️ Image + text question support
-- ⚡ Streamlit web interface for easy use
-- 🧠 Built with LangChain + OpenAI + FAISS
+## Required setup (local)
 
----
+1. Python backend deps:
+```bash
+cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-## 🛠 Tech Stack
+2. Set `.env`:
+```env
+OPENAI_API_KEY=your_key_here
+# Optional fallback bootstrap for backend start if local index missing:
+VECTORSTORE_ZIP_URL=https://your-host/vectorstore.zip
+```
 
-- **Frontend/App**: Streamlit  
-- **LLM & Embeddings**: OpenAI (`ChatOpenAI`, `OpenAIEmbeddings`)  
-- **Orchestration**: LangChain  
-- **Vector DB**: FAISS  
-- **PDF Parsing**: PyPDF2  
-- **Environment Management**: python-dotenv  
+3. Flutter deps:
+```bash
+cd mobile_app
+flutter pub get
+```
 
----
+## Run (macOS test)
 
-## 📂 Project Structure
+Terminal 1:
+```bash
+cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version
+PORT=8001 ./scripts/run_backend.sh
+```
 
-- `app.py` — main Streamlit application logic  
-- `htmltemplates.py` — chat UI templates/styles  
-- `vectorstore/faiss_index` — persisted FAISS index  
-- `.env` — API keys and environment config  
+Terminal 2:
+```bash
+cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version
+BACKEND_BASE_URL=http://127.0.0.1:8001 ./scripts/run_flutter_macos.sh
+```
 
----
+## Build APK
 
-## 🚀 Run Locally
+1. Start backend reachable by phone/emulator:
+```bash
+cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version
+HOST=0.0.0.0 PORT=8001 ./scripts/run_backend.sh
+```
 
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+2. Build APK:
+```bash
+cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version/mobile_app
+flutter build apk --release
+```
 
-2. Add your API key in `.env`:
-   ```env
-   OPENAI_API_KEY=your_api_key_here
-   ```
+Output:
+- `mobile_app/build/app/outputs/flutter-apk/app-release.apk`
 
-3. Start the app:
-   ```bash
-   streamlit run app.py
-   ```
+3. Test backend URL in app:
+- Android emulator: `http://10.0.2.2:8001`
+- Real phone: `http://<your-mac-lan-ip>:8001`
 
----
+Build/run with URL:
+```bash
+flutter run --dart-define=BACKEND_BASE_URL=http://10.0.2.2:8001
+```
 
-## 👨‍💻 Credits
+## Vector ZIP format (important)
 
-- **Developer:** **Omi**  
-- **AI Assistant Support:** **GitHub Copilot (GPT-5.3-Codex)** (helped to make ui changes and helped to make math functions given in responce readable)
+Create ZIP for app/backend bootstrap:
+```bash
+cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version
+./scripts/create_vector_zip.sh
+```
 
----
+ZIP must contain one of:
+- `faiss_index/index.faiss` (preferred)
+- `vectorstore/faiss_index/index.faiss` (also supported)
 
-## 📚 Learning Resources
-
-- https://www.youtube.com/watch?v=74c3KaAXPvk  
-- https://www.youtube.com/watch?v=dXxQ0LR-3Hg  
-
----
-
-## 📌 Portfolio Note
-
-This project demonstrates practical skills in:
-- Retrieval-Augmented Generation (RAG)
-- LLM app development
-- Prompt design for educational assistants
-- End-to-end deployment-ready Streamlit workflows
+Optional app-side download on first launch:
+```bash
+flutter run \
+  --dart-define=BACKEND_BASE_URL=http://10.0.2.2:8001 \
+  --dart-define=VECTOR_ZIP_URL=https://your-host/vectorstore.zip
+```
