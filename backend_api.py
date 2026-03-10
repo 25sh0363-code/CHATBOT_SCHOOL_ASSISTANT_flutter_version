@@ -15,8 +15,9 @@ from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from pydantic import BaseModel, Field
 
-EMBEDDING_MODEL = "text-embedding-3-small"
-CHAT_MODEL = "gpt-4.1-nano"
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4.1-mini")
+VISION_CHAT_MODEL = os.getenv("VISION_CHAT_MODEL", "gpt-4.1-mini")
 VECTORSTORE_DIR = Path("vectorstore/faiss_index")
 VECTORSTORE_INDEX_PATH = VECTORSTORE_DIR / "index.faiss"
 
@@ -190,7 +191,7 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str)
     # Validate base64 early to return clean client error for malformed payloads.
     base64.b64decode(image_base64, validate=True)
 
-    vision_llm = ChatOpenAI(model_name="gpt-4.1-mini", temperature=0)
+    vision_llm = ChatOpenAI(model_name=VISION_CHAT_MODEL, temperature=0)
     ai_message = vision_llm.invoke(
         [
             HumanMessage(

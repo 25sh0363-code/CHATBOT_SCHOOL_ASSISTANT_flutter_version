@@ -30,11 +30,19 @@ class LoginScreen extends StatelessWidget {
                   Text('School Assistant', style: Theme.of(context).textTheme.headlineSmall),
                   const SizedBox(height: 8),
                   const Text('Chat tutor, schedule tests, view calendar, and track performance.'),
+                  if (!authService.isGoogleSignInSupported) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Google Sign-In is unavailable on this desktop build. Use Continue As Guest.',
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: authService.signInWithGoogle,
+                      onPressed: authService.isGoogleSignInSupported
+                          ? authService.signInWithGoogle
+                          : null,
                       child: const Text('Sign In With Google'),
                     ),
                   ),

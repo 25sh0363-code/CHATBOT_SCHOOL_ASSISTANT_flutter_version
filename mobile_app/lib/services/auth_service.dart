@@ -8,10 +8,23 @@ class AuthService {
   final GoogleSignIn _googleSignIn = GoogleSignIn();
   GoogleSignInAccount? _account;
 
+  bool get isGoogleSignInSupported {
+    return ![
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ].contains(defaultTargetPlatform);
+  }
+
   String get displayName => _account?.displayName ?? 'Student';
   String get email => _account?.email ?? '';
 
   Future<void> signInWithGoogle() async {
+    if (!isGoogleSignInSupported) {
+      isSignedIn.value = false;
+      return;
+    }
+
     try {
       _account = await _googleSignIn.signIn();
       isSignedIn.value = _account != null;
@@ -26,7 +39,9 @@ class AuthService {
   }
 
   Future<void> signOut() async {
-    await _googleSignIn.signOut();
+    if (isGoogleSignInSupported) {
+      await _googleSignIn.signOut();
+    }
     _account = null;
     isSignedIn.value = false;
   }
