@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../config/app_config.dart';
 import '../models/worksheet_record.dart';
@@ -257,9 +258,31 @@ class _WorksheetScreenState extends State<WorksheetScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 for (final question in item.questions)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 6),
-                                    child: Text(question),
+                                  Card(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: SelectableText(question),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.copy, size: 18),
+                                            tooltip: 'Copy question',
+                                            onPressed: () {
+                                              Clipboard.setData(ClipboardData(text: question));
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text('Question copied to clipboard'),
+                                                  duration: Duration(seconds: 1),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                               ],
                             ),

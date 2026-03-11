@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../config/app_config.dart';
@@ -254,9 +255,32 @@ class _ChatScreenState extends State<ChatScreen> {
                             color: bgColor,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Text(
-                            msg.text,
-                            style: TextStyle(color: textColor),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SelectableText(
+                                msg.text,
+                                style: TextStyle(color: textColor),
+                              ),
+                              if (!msg.isUser && !msg.isError)
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.copy, size: 16),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () {
+                                      Clipboard.setData(ClipboardData(text: msg.text));
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Copied to clipboard'),
+                                          duration: Duration(seconds: 1),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       );
