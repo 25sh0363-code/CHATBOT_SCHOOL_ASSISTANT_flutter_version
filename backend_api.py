@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_community.vectorstores import FAISS
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from pydantic import BaseModel, Field
 
@@ -28,12 +28,14 @@ RETRIEVAL_CHARS_PER_CHUNK = int(os.getenv("RETRIEVAL_CHARS_PER_CHUNK", "1100"))
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=3000)
+    history: list[dict[str, str]] = Field(default_factory=list)
 
 
 class ImageChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=3000)
     image_base64: str = Field(min_length=20)
     mime_type: str = "image/jpeg"
+    history: list[dict[str, str]] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
@@ -196,12 +198,39 @@ def get_retrieved_context(question: str) -> tuple[str, int]:
         meta = getattr(doc, "metadata", {}) or {}
         source = Path(str(meta.get("source", f"chunk-{index}"))).name
         snippet = (getattr(doc, "page_content", "") or "")[:RETRIEVAL_CHARS_PER_CHUNK]
-        context_parts.append(f"[Source {index}: {source}]\n{snippet}")
+        # Don't include source labels in context to avoid them appearing in output
+        context_parts.append(snippet)
 
     return "\n\n".join(context_parts), len(docs)
 
 
-def answer_question(question: str) -> ChatResponse:
+def strip_source_citations(text: str) -> str:
+    """Remove source citations like [Source 1], [Source 2], etc. from text."""
+    return re.sub(r"\[Source\s+\d+\]", "", text).strip()
+
+
+def build_conversation_messages(history: list[dict[str, str]], system_prompt: str, user_message: str) -> list:
+    """Build a list of messages for the LLM from conversation history."""
+    messages = [SystemMessage(content=system_prompt)]
+    
+    # Add conversation history
+    for msg in history:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role == "user":
+            messages.append(HumanMessage(content=content))
+        elif role == "assistant":
+            messages.append(AIMessage(content=content))
+    
+    # Add current question
+    messages.append(HumanMessage(content=user_message))
+    return messages
+
+
+def answer_question(question: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
+    if history is None:
+        history = []
+    
     context, chunk_count = get_retrieved_context(question)
     used_context = bool(context.strip())
     strict_mode = is_textbook_only_mode(question)
@@ -213,31 +242,38 @@ def answer_question(question: str) -> ChatResponse:
             context_chunks=0,
         )
 
-    prompt = (
+    system_prompt = (
         "You are an expert Class 11-12 chemistry and physics tutor grounded in retrieved study materials.\n"
         "Always prioritize retrieved context over model memory.\n"
-        "When retrieved context is sufficient, answer strictly from it and cite source labels like [Source 1].\n"
-        "If context is incomplete and strict textbook mode is NOT requested, complete with careful domain knowledge and explicitly include: 'Based on general chemistry/physics knowledge'.\n"
+        "When retrieved context is sufficient, answer strictly from it.\n"
+        "If context is incomplete and strict textbook mode is NOT requested, complete with careful domain knowledge.\n"
         "If strict textbook mode is requested, do not add outside facts.\n"
         "When formulas are needed, write equations in plain text only (no LaTeX).\n"
-        "Prefer concise, exam-ready answers with steps and key points.\n\n"
-        f"Context:\n{context if used_context else 'No relevant context retrieved.'}\n\n"
-        f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n"
-        f"Question: {question}\n"
-        "Answer:"
+        "Prefer concise, exam-ready answers with steps and key points.\n"
+        "Use the conversation history to understand follow-up questions and maintain context.\n\n"
+        f"Retrieved Context:\n{context if used_context else 'No relevant context retrieved.'}\n\n"
+        f"Strict textbook mode: {'yes' if strict_mode else 'no'}"
     )
 
+    messages = build_conversation_messages(history, system_prompt, question)
+
     llm = ChatOpenAI(model_name=CHAT_MODEL, temperature=0)
-    result = llm.invoke(prompt)
+    result = llm.invoke(messages)
+
+    answer = make_math_readable(str(result.content).strip())
+    answer = strip_source_citations(answer)
 
     return ChatResponse(
-        answer=make_math_readable(str(result.content).strip()),
+        answer=answer,
         used_context=used_context,
         context_chunks=chunk_count,
     )
 
 
-def answer_question_with_image(question: str, image_base64: str, mime_type: str) -> ChatResponse:
+def answer_question_with_image(question: str, image_base64: str, mime_type: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
+    if history is None:
+        history = []
+    
     context, chunk_count = get_retrieved_context(question)
     used_context = bool(context.strip())
     strict_mode = is_textbook_only_mode(question)
@@ -251,15 +287,26 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str)
 
     prompt_text = (
         "You are an expert chemistry and physics tutor. Analyze the attached image and answer the question.\n"
-        "Use retrieved context first and cite source labels like [Source 1] where applicable.\n"
-        "If image + context are insufficient and strict textbook mode is NOT requested, complete with careful domain knowledge and state: 'Based on general chemistry/physics knowledge'.\n"
+        "Use retrieved context first where applicable.\n"
+        "If image + context are insufficient and strict textbook mode is NOT requested, complete with careful domain knowledge.\n"
         "If strict textbook mode is requested, do not add outside facts.\n"
         "Interpret formulas/graphs/diagrams clearly.\n"
         "Write equations in plain text only (example: R = sqrt(A^2 + B^2 + 2AB cos(theta))). Do not use LaTeX.\n"
+        "Use the conversation history to understand follow-up questions and maintain context.\n\n"
         f"Retrieved context:\n{context if used_context else 'No additional context retrieved.'}\n\n"
         f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n"
-        f"Question: {question}"
     )
+    
+    # Add conversation history context to the prompt
+    if history:
+        prompt_text += "\nConversation history:\n"
+        for msg in history[-4:]:  # Last 4 messages for context
+            role = msg.get("role", "")
+            content = msg.get("content", "")[:200]  # Truncate for brevity
+            prompt_text += f"{role}: {content}\n"
+        prompt_text += "\n"
+    
+    prompt_text += f"Question: {question}"
 
     # Validate base64 early to return clean client error for malformed payloads.
     base64.b64decode(image_base64, validate=True)
@@ -279,8 +326,11 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str)
         ]
     )
 
+    answer = make_math_readable(str(ai_message.content).strip())
+    answer = strip_source_citations(answer)
+
     return ChatResponse(
-        answer=make_math_readable(str(ai_message.content).strip()),
+        answer=answer,
         used_context=used_context,
         context_chunks=chunk_count,
     )
@@ -301,7 +351,7 @@ def health_check() -> dict:
 @app.post("/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest) -> ChatResponse:
     try:
-        return answer_question(payload.question.strip())
+        return answer_question(payload.question.strip(), history=payload.history)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
@@ -315,6 +365,7 @@ def chat_with_image(payload: ImageChatRequest) -> ChatResponse:
             question=payload.question.strip(),
             image_base64=payload.image_base64.strip(),
             mime_type=payload.mime_type.strip() or "image/jpeg",
+            history=payload.history,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid image payload: {exc}") from exc

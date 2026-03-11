@@ -9,12 +9,15 @@ class ChatApiService {
   final String baseUrl;
   final http.Client _client;
 
-  Future<String> sendMessage(String question) async {
+  Future<String> sendMessage(String question, {List<Map<String, String>>? history}) async {
     final uri = Uri.parse('$baseUrl/chat');
     final response = await _client.post(
       uri,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'question': question}),
+      body: jsonEncode({
+        'question': question,
+        'history': history ?? [],
+      }),
     );
 
     if (response.statusCode != 200) {
@@ -29,6 +32,7 @@ class ChatApiService {
     required String question,
     required String imageBase64,
     required String mimeType,
+    List<Map<String, String>>? history,
   }) async {
     final uri = Uri.parse('$baseUrl/chat/image');
     final response = await _client.post(
@@ -38,6 +42,7 @@ class ChatApiService {
         'question': question,
         'image_base64': imageBase64,
         'mime_type': mimeType,
+        'history': history ?? [],
       }),
     );
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/chat_message.dart';
 import '../models/test_record.dart';
 import '../models/timetable_entry.dart';
 import '../models/worksheet_record.dart';
@@ -11,6 +12,7 @@ class LocalStoreService {
   static const String _timetableKey = 'timetable_v1';
   static const String _worksheetsKey = 'worksheets_v1';
   static const String _darkModeKey = 'dark_mode_v1';
+  static const String _chatHistoryKey = 'chat_history_v1';
 
   Future<List<TestRecord>> loadTests() async {
     final prefs = await SharedPreferences.getInstance();
@@ -83,5 +85,30 @@ class LocalStoreService {
   Future<void> saveDarkModeEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_darkModeKey, enabled);
+  }
+
+  Future<List<ChatMessage>> loadChatHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_chatHistoryKey);
+    if (raw == null || raw.isEmpty) {
+      return [];
+    }
+
+    final list = (jsonDecode(raw) as List<dynamic>)
+        .cast<Map<String, dynamic>>()
+        .map(ChatMessage.fromJson)
+        .toList();
+    return list;
+  }
+
+  Future<void> saveChatHistory(List<ChatMessage> messages) async {
+    final prefs = await SharedPreferences.getInstance();
+    final payload = jsonEncode(messages.map((e) => e.toJson()).toList());
+    await prefs.setString(_chatHistoryKey, payload);
+  }
+
+  Future<void> clearChatHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_chatHistoryKey);
   }
 }

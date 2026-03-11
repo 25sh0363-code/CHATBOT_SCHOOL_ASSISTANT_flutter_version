@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../config/app_config.dart';
+import '../models/chat_message.dart';
 import '../services/chat_api_service.dart';
+import '../services/local_store_service.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -15,10 +17,12 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
-  final List<_ChatMessage> _messages = <_ChatMessage>[];
+  final List<ChatMessage> _messages = <ChatMessage>[];
   late final ChatApiService _chatService;
+  late final LocalStoreService _storeService;
 
   bool _sending = false;
+  bool _loading = true;
   String? _selectedImageBase64;
   String? _selectedImageName;
   String _selectedMimeType = 'image/jpeg';
@@ -27,6 +31,49 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _chatService = ChatApiService(baseUrl: AppConfig.backendBaseUrl);
+    _storeService = LocalStoreService();
+    _loadChatHistory();
+  }
+
+  Future<void> _loadChatHistory() async {
+    final history = await _storeService.loadChatHistory();
+    if (mounted) {
+      setState(() {
+        _messages.addAll(history);
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _saveChatHistory() async {
+    await _storeService.saveChatHistory(_messages);
+  }
+
+  Future<void> _clearChatHistory() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Chat History'),
+        content: const Text('Are you sure you want to clear all chat messages?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      setState(() {
+        _messages.clear();
+      });
+      await _storeService.clearChatHistory();
+    }
   }
 
   Future<void> _send() async {
@@ -44,7 +91,7 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _sending = true;
       _messages.add(
-        _ChatMessage(
+        ChatMessage(
           text: hasImage && imageName != null ? '[Image: $imageName] $prompt' : prompt,
           isUser: true,
         ),
@@ -56,22 +103,32 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     try {
+      // Get conversation history (last 6 messages for context)
+      final history = _messages
+          .where((m) => !m.isError)
+          .take(_messages.length > 6 ? _messages.length - 6 : 0)
+          .skip(_messages.length > 6 ? _messages.length - 6 : 0)
+          .map((m) => {'role': m.isUser ? 'user' : 'assistant', 'content': m.text})
+          .toList();
+
       final answer = hasImage && imageBase64 != null
           ? await _chatService.sendMessageWithImage(
               question: prompt,
               imageBase64: imageBase64,
               mimeType: mimeType,
+              history: history,
             )
-          : await _chatService.sendMessage(prompt);
+          : await _chatService.sendMessage(prompt, history: history);
       if (!mounted) return;
       setState(() {
-        _messages.add(_ChatMessage(text: answer, isUser: false));
+        _messages.add(ChatMessage(text: answer, isUser: false));
       });
+      await _saveChatHistory();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _messages.add(
-          _ChatMessage(
+          ChatMessage(
             text: 'Request failed: $e',
             isUser: false,
             isError: true,
@@ -146,12 +203,28 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
+          if (_messages.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton.icon(
+                    onPressed: _clearChatHistory,
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: const Text('Clear Chat'),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
-            child: _messages.isEmpty
-                ? const Center(
-                    child: Text('Ask a chemistry or physics question to start.'),
-                  )
-                : ListView.builder(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _messages.isEmpty
+                    ? const Center(
+                        child: Text('Ask a chemistry or physics question to start.'),
+                      )
+                    : ListView.builder(
                     itemCount: _messages.length,
                     itemBuilder: (context, index) {
                       final msg = _messages[index];
@@ -242,16 +315,4 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
   }
-}
-
-class _ChatMessage {
-  _ChatMessage({
-    required this.text,
-    required this.isUser,
-    this.isError = false,
-  });
-
-  final String text;
-  final bool isUser;
-  final bool isError;
 }
