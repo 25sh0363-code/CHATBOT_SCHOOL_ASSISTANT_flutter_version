@@ -1,95 +1,97 @@
-# School Assistant (Flutter + FastAPI)
+# 📚 School Assistant – Chemistry & Physics AI Tutor
 
-Chemistry and Physics assistant with:
-- Flutter app (`mobile_app/`)
-- FastAPI backend (`backend_api.py`)
-- FAISS vector database (`vectorstore/faiss_index`)
+A mobile learning assistant designed to help students understand **Chemistry and Physics concepts quickly and clearly**.
 
-## What gets installed where
+The app provides AI-powered explanations, concept search, and educational assistance tailored for school-level science topics.
 
-- APK includes all Flutter/Dart dependencies at build time.
-- Android device does NOT install Python packages.
-- Python dependencies are only on your backend machine/server.
-- Vector DB is used by backend now, and optional vector ZIP download exists in app.
+---
 
-## Required setup (local)
+# 🚀 Features
 
-1. Python backend deps:
-```bash
-cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+### 🧠 AI Science Tutor
+Ask questions about **Chemistry and Physics** and receive clear, easy-to-understand explanations.
 
-2. Set `.env`:
-```env
-OPENAI_API_KEY=your_key_here
-# Optional fallback bootstrap for backend start if local index missing:
-VECTORSTORE_ZIP_URL=https://your-host/vectorstore.zip
-```
+### 🔍 Concept Search
+Find explanations for important science concepts quickly.
 
-3. Flutter deps:
-```bash
-cd mobile_app
-flutter pub get
-```
+### 📖 Curriculum-Focused Knowledge
+Responses are based on curated school-level science content.
 
-## Run (macOS test)
+### ⚡ Fast Responses
+Uses a vector database to quickly retrieve relevant educational information.
 
-Terminal 1:
-```bash
-cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version
-PORT=8001 ./scripts/run_backend.sh
-```
+### 📱 Mobile App
+Built with **Flutter** for a smooth experience on Android devices.
 
-Terminal 2:
-```bash
-cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version
-BACKEND_BASE_URL=http://127.0.0.1:8001 ./scripts/run_flutter_macos.sh
-```
+### 🤖 AI-Powered Backend
+Uses an AI backend to generate explanations and answers.
 
-## Build APK
+### 🗂 Knowledge Retrieval System
+A vector database helps the system find the most relevant scientific explanations before generating responses.
 
-1. Start backend reachable by phone/emulator:
-```bash
-cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version
-HOST=0.0.0.0 PORT=8001 ./scripts/run_backend.sh
-```
+---
 
-2. Build APK:
-```bash
-cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version/mobile_app
-flutter build apk --release
-```
+# 🎯 Purpose
 
-Output:
-- `mobile_app/build/app/outputs/flutter-apk/app-release.apk`
+This project aims to:
 
-3. Test backend URL in app:
-- Android emulator: `http://10.0.2.2:8001`
-- Real phone: `http://<your-mac-lan-ip>:8001`
+- Help students understand **complex science topics easily**
+- Provide **instant academic support**
+- Encourage **self-learning**
+- Make science **more accessible and interactive**
 
-Build/run with URL:
-```bash
-flutter run --dart-define=BACKEND_BASE_URL=http://10.0.2.2:8001
-```
+---
 
-## Vector ZIP format (important)
+# 🧪 Subjects Covered
 
-Create ZIP for app/backend bootstrap:
-```bash
-cd /Users/omi/Downloads/CHATBOT_SCHOOL_ASSISTANT_flutter_version
-./scripts/create_vector_zip.sh
-```
+Currently focused on:
 
-ZIP must contain one of:
-- `faiss_index/index.faiss` (preferred)
-- `vectorstore/faiss_index/index.faiss` (also supported)
+- **Chemistry**
+- **Physics**
 
-Optional app-side download on first launch:
-```bash
-flutter run \
-  --dart-define=BACKEND_BASE_URL=http://10.0.2.2:8001 \
-  --dart-define=VECTOR_ZIP_URL=https://your-host/vectorstore.zip
-```
+Future versions may expand to include:
+
+- Mathematics  
+- Biology  
+- Exam preparation modules  
+
+---
+
+# 🏗 Project Architecture (Simple Overview)
+
+The system consists of three main components:
+
+### 📱 Mobile Application
+Built using **Flutter** to provide an easy-to-use interface for students.
+
+### ⚙ Backend API
+Built using **FastAPI** to process requests and generate AI responses.
+
+### 🧠 Knowledge Database
+A **vector database** is used to retrieve relevant educational content efficiently.
+
+---
+
+# 📚 Resources Referenced
+
+Some learning resources and tutorials that helped during development:
+
+- https://www.youtube.com/watch?v=74c3KaAXPvk  
+- https://www.youtube.com/watch?v=dXxQ0LR-3Hg  
+
+---
+
+# 📌 Portfolio Note
+
+This project demonstrates practical skills in:
+
+- **Retrieval-Augmented Generation (RAG)**
+- **LLM application development**
+- **Prompt design for educational assistants**
+- **End-to-end deployment-ready workflows**
+
+---
+
+# 👨‍💻 Author
+
+**Om Suraj Kashikar**
