@@ -244,13 +244,14 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
 
     system_prompt = (
         "You are an expert Class 11-12 chemistry and physics tutor grounded in retrieved study materials.\n"
+        "CRITICAL: Always read the entire conversation history to understand what 'this', 'that', 'these topics', 'it', etc. refer to.\n"
+        "When a user says 'make a worksheet on these topics' or 'explain that', look at the previous messages to understand the context.\n"
         "Always prioritize retrieved context over model memory.\n"
         "When retrieved context is sufficient, answer strictly from it.\n"
         "If context is incomplete and strict textbook mode is NOT requested, complete with careful domain knowledge.\n"
         "If strict textbook mode is requested, do not add outside facts.\n"
         "When formulas are needed, write equations in plain text only (no LaTeX).\n"
-        "Prefer concise, exam-ready answers with steps and key points.\n"
-        "Use the conversation history to understand follow-up questions and maintain context.\n\n"
+        "Prefer concise, exam-ready answers with steps and key points.\n\n"
         f"Retrieved Context:\n{context if used_context else 'No relevant context retrieved.'}\n\n"
         f"Strict textbook mode: {'yes' if strict_mode else 'no'}"
     )
@@ -287,26 +288,26 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
 
     prompt_text = (
         "You are an expert chemistry and physics tutor. Analyze the attached image and answer the question.\n"
+        "CRITICAL: Read the conversation history below to understand what 'this', 'that', 'these', 'it' refer to in the question.\n"
         "Use retrieved context first where applicable.\n"
         "If image + context are insufficient and strict textbook mode is NOT requested, complete with careful domain knowledge.\n"
         "If strict textbook mode is requested, do not add outside facts.\n"
         "Interpret formulas/graphs/diagrams clearly.\n"
-        "Write equations in plain text only (example: R = sqrt(A^2 + B^2 + 2AB cos(theta))). Do not use LaTeX.\n"
-        "Use the conversation history to understand follow-up questions and maintain context.\n\n"
+        "Write equations in plain text only (example: R = sqrt(A^2 + B^2 + 2AB cos(theta))). Do not use LaTeX.\n\n"
         f"Retrieved context:\n{context if used_context else 'No additional context retrieved.'}\n\n"
         f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n"
     )
     
-    # Add conversation history context to the prompt
+  
     if history:
         prompt_text += "\nConversation history:\n"
-        for msg in history[-4:]:  # Last 4 messages for context
+        for msg in history[-6:]:  # Last 6 messages for context
             role = msg.get("role", "")
-            content = msg.get("content", "")[:200]  # Truncate for brevity
+            content = msg.get("content", "")[:300]  # Truncate for brevity
             prompt_text += f"{role}: {content}\n"
         prompt_text += "\n"
     
-    prompt_text += f"Question: {question}"
+    prompt_text += f"Current question: {question}"
 
     # Validate base64 early to return clean client error for malformed payloads.
     base64.b64decode(image_base64, validate=True)
