@@ -109,34 +109,45 @@ def ensure_local_vectorstore() -> None:
 
 
 def make_math_readable(text: str) -> str:
+    """Format math and ensure markdown compatibility."""
     if not text:
         return text
 
-    text = text.replace("\\[", "").replace("\\]", "")
-    text = text.replace("\\(", "").replace("\\)", "")
-
-    text = re.sub(r"\\\\sqrt\{([^}]*)\}", r"sqrt(\1)", text)
-    text = re.sub(r"\\\\frac\{([^}]*)\}\{([^}]*)\}", r"(\1)/(\2)", text)
-    text = re.sub(r"\\\\mathbf\{([^}]*)\}", r"\1", text)
-    text = re.sub(r"\\\\text\{([^}]*)\}", r"\1", text)
-
+    # Keep basic markdown formatting but make inline math readable
+    # Convert LaTeX delimiters to simpler format for mobile display
+    text = text.replace("\\[", "\n\n**Equation:**\n```\n").replace("\\]", "\n```\n\n")
+    text = text.replace("\\(", "`").replace("\\)", "`")
+    
+    # Simplify common LaTeX commands for readability
+    text = re.sub(r"\\sqrt\{([^}]*)\}", r"√(\1)", text)
+    text = re.sub(r"\\frac\{([^}]*)\}\{([^}]*)\}", r"(\1)/(\2)", text)
+    
+    # Replace Greek letters with Unicode symbols
     replacements = {
-        "\\theta": "theta",
-        "\\alpha": "alpha",
-        "\\beta": "beta",
-        "\\gamma": "gamma",
-        "\\Delta": "Delta",
-        "\\times": "x",
-        "\\cdot": "*",
-        "\\cos": "cos",
-        "\\sin": "sin",
-        "\\tan": "tan",
-        "\\pi": "pi",
+        "\\theta": "θ",
+        "\\alpha": "α",
+        "\\beta": "β",
+        "\\gamma": "γ",
+        "\\Delta": "Δ",
+        "\\delta": "δ",
+        "\\pi": "π",
+        "\\mu": "μ",
+        "\\sigma": "σ",
+        "\\omega": "ω",
+        "\\Omega": "Ω",
+        "\\lambda": "λ",
+        "\\times": "×",
+        "\\cdot": "·",
+        "\\pm": "±",
+        "\\approx": "≈",
+        "\\leq": "≤",
+        "\\geq": "≥",
+        "\\neq": "≠",
     }
     for src, dst in replacements.items():
         text = text.replace(src, dst)
 
-    return text.replace("\\", "").strip()
+    return text.strip()
 
 
 def is_textbook_only_mode(question: str) -> bool:
@@ -246,11 +257,22 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
         "You are an expert Class 11-12 chemistry and physics tutor grounded in retrieved study materials.\n"
         "CRITICAL: Always read the entire conversation history to understand what 'this', 'that', 'these topics', 'it', etc. refer to.\n"
         "When a user says 'make a worksheet on these topics' or 'explain that', look at the previous messages to understand the context.\n"
+        "\n"
+        "**FORMATTING REQUIREMENTS:**\n"
+        "- Use Markdown formatting for better readability\n"
+        "- Use ## for main headings, ### for subheadings\n"
+        "- Use **bold** for important terms\n"
+        "- Use tables for comparisons (| Column 1 | Column 2 |\n|---------|---------|\n| data | data |)\n"
+        "- Use bullet points (- item) or numbered lists (1. item) for steps\n"
+        "- Use inline code `like this` for formulas and chemical symbols\n"
+        "- Use > for important notes or key points\n"
+        "- For equations, use readable format: F = ma, E = mc², PV = nRT, etc.\n"
+        "- Use Unicode symbols: θ α β γ Δ π × · ± ≈ √\n"
+        "\n"
         "Always prioritize retrieved context over model memory.\n"
         "When retrieved context is sufficient, answer strictly from it.\n"
         "If context is incomplete and strict textbook mode is NOT requested, complete with careful domain knowledge.\n"
         "If strict textbook mode is requested, do not add outside facts.\n"
-        "When formulas are needed, write equations in plain text only (no LaTeX).\n"
         "Prefer concise, exam-ready answers with steps and key points.\n\n"
         f"Retrieved Context:\n{context if used_context else 'No relevant context retrieved.'}\n\n"
         f"Strict textbook mode: {'yes' if strict_mode else 'no'}"
@@ -289,11 +311,21 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
     prompt_text = (
         "You are an expert chemistry and physics tutor. Analyze the attached image and answer the question.\n"
         "CRITICAL: Read the conversation history below to understand what 'this', 'that', 'these', 'it' refer to in the question.\n"
+        "\n"
+        "**FORMATTING REQUIREMENTS:**\n"
+        "- Use Markdown formatting for better readability\n"
+        "- Use ## for main headings, ### for subheadings\n"
+        "- Use **bold** for important terms\n"
+        "- Use tables for comparisons\n"
+        "- Use bullet points or numbered lists for steps\n"
+        "- Use inline code `like this` for formulas\n"
+        "- For equations, use readable format with Unicode symbols: F = ma, E = mc², PV = nRT\n"
+        "- Use symbols: θ α β γ Δ π × · ± ≈ √\n"
+        "\n"
         "Use retrieved context first where applicable.\n"
         "If image + context are insufficient and strict textbook mode is NOT requested, complete with careful domain knowledge.\n"
         "If strict textbook mode is requested, do not add outside facts.\n"
-        "Interpret formulas/graphs/diagrams clearly.\n"
-        "Write equations in plain text only (example: R = sqrt(A^2 + B^2 + 2AB cos(theta))). Do not use LaTeX.\n\n"
+        "Interpret formulas/graphs/diagrams clearly.\n\n"
         f"Retrieved context:\n{context if used_context else 'No additional context retrieved.'}\n\n"
         f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n"
     )

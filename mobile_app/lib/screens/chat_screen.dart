@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../config/app_config.dart';
 import '../models/chat_message.dart';
@@ -258,10 +259,45 @@ class _ChatScreenState extends State<ChatScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              SelectableText(
-                                msg.text,
-                                style: TextStyle(color: textColor),
-                              ),
+                              if (msg.isUser)
+                                SelectableText(
+                                  msg.text,
+                                  style: TextStyle(color: textColor),
+                                )
+                              else
+                                MarkdownBody(
+                                  data: msg.text,
+                                  selectable: true,
+                                  styleSheet: MarkdownStyleSheet(
+                                    p: TextStyle(color: textColor, fontSize: 14),
+                                    h1: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold),
+                                    h2: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold),
+                                    h3: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
+                                    code: TextStyle(
+                                      color: textColor,
+                                      backgroundColor: isDark ? Colors.black26 : Colors.grey[200],
+                                      fontFamily: 'monospace',
+                                    ),
+                                    codeblockDecoration: BoxDecoration(
+                                      color: isDark ? Colors.black26 : Colors.grey[200],
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    tableBorder: TableBorder.all(
+                                      color: textColor.withOpacity(0.3),
+                                      width: 1,
+                                    ),
+                                    tableHead: TextStyle(
+                                      color: textColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    tableBody: TextStyle(color: textColor),
+                                    blockquote: TextStyle(
+                                      color: textColor.withOpacity(0.8),
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                    listBullet: TextStyle(color: textColor),
+                                  ),
+                                ),
                               if (!msg.isUser && !msg.isError)
                                 Align(
                                   alignment: Alignment.centerRight,
