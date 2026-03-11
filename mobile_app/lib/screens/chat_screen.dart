@@ -88,6 +88,14 @@ class _ChatScreenState extends State<ChatScreen> {
     final mimeType = _selectedMimeType;
     final prompt = text.isEmpty ? 'Analyze this image.' : text;
 
+    // Get conversation history BEFORE adding the current message (last 10 messages)
+    final nonErrorMessages = _messages.where((m) => !m.isError).toList();
+    final historyCount = nonErrorMessages.length > 10 ? 10 : nonErrorMessages.length;
+    final history = nonErrorMessages
+        .skip(nonErrorMessages.length > historyCount ? nonErrorMessages.length - historyCount : 0)
+        .map((m) => {'role': m.isUser ? 'user' : 'assistant', 'content': m.text})
+        .toList();
+
     setState(() {
       _sending = true;
       _messages.add(
@@ -103,13 +111,6 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     try {
-      // Get conversation history (last 6 messages for context)
-      final history = _messages
-          .where((m) => !m.isError)
-          .take(_messages.length > 6 ? _messages.length - 6 : 0)
-          .skip(_messages.length > 6 ? _messages.length - 6 : 0)
-          .map((m) => {'role': m.isUser ? 'user' : 'assistant', 'content': m.text})
-          .toList();
 
       final answer = hasImage && imageBase64 != null
           ? await _chatService.sendMessageWithImage(
