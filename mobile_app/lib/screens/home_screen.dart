@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/local_store_service.dart';
 import 'calendar_screen.dart';
 import 'chat_screen.dart';
+import 'notes_screen.dart';
 import 'tests_screen.dart';
 import 'timetable_screen.dart';
 import 'worksheet_screen.dart';
@@ -33,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
       TestsScreen(storeService: _storeService),
       CalendarScreen(storeService: _storeService),
       TimetableScreen(storeService: _storeService),
+      NotesScreen(storeService: _storeService),
       WorksheetScreen(storeService: _storeService),
     ];
 
@@ -56,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(icon: Icon(Icons.analytics_outlined), label: 'Tests'),
           NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: 'Calendar'),
           NavigationDestination(icon: Icon(Icons.schedule_outlined), label: 'Timetable'),
+          NavigationDestination(icon: Icon(Icons.sticky_note_2_outlined), label: 'Notes'),
           NavigationDestination(icon: Icon(Icons.description_outlined), label: 'Worksheet'),
         ],
       ),

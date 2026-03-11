@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/chat_message.dart';
+import '../models/quick_note.dart';
 import '../models/test_record.dart';
 import '../models/timetable_entry.dart';
 import '../models/worksheet_record.dart';
@@ -13,6 +14,7 @@ class LocalStoreService {
   static const String _worksheetsKey = 'worksheets_v1';
   static const String _darkModeKey = 'dark_mode_v1';
   static const String _chatHistoryKey = 'chat_history_v1';
+  static const String _quickNotesKey = 'quick_notes_v1';
 
   Future<List<TestRecord>> loadTests() async {
     final prefs = await SharedPreferences.getInstance();
@@ -110,5 +112,26 @@ class LocalStoreService {
   Future<void> clearChatHistory() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_chatHistoryKey);
+  }
+
+  Future<List<QuickNote>> loadQuickNotes() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_quickNotesKey);
+    if (raw == null || raw.isEmpty) {
+      return [];
+    }
+
+    final list = (jsonDecode(raw) as List<dynamic>)
+        .cast<Map<String, dynamic>>()
+        .map(QuickNote.fromJson)
+        .toList();
+    list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return list;
+  }
+
+  Future<void> saveQuickNotes(List<QuickNote> notes) async {
+    final prefs = await SharedPreferences.getInstance();
+    final payload = jsonEncode(notes.map((e) => e.toJson()).toList());
+    await prefs.setString(_quickNotesKey, payload);
   }
 }

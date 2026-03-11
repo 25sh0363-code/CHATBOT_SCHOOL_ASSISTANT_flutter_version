@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/timetable_entry.dart';
 import '../services/local_store_service.dart';
+import '../services/notification_service.dart';
 
 class TimetableScreen extends StatefulWidget {
   const TimetableScreen({super.key, required this.storeService});
@@ -33,10 +34,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
       return;
     }
     setState(() => _entries = items);
+    await NotificationService.instance.syncTimetableNotifications(_entries);
   }
 
   Future<void> _save() async {
     await widget.storeService.saveTimetableEntries(_entries);
+    await NotificationService.instance.syncTimetableNotifications(_entries);
   }
 
   Future<void> _addEntry() async {
@@ -45,6 +48,13 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final end = _endController.text.trim();
 
     if (subject.isEmpty || start.isEmpty || end.isEmpty) {
+      return;
+    }
+
+    if (!_isValidTime(start) || !_isValidTime(end)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Use 24-hour format HH:MM for time.')),
+      );
       return;
     }
 
@@ -67,6 +77,19 @@ class _TimetableScreenState extends State<TimetableScreen> {
     _startController.clear();
     _endController.clear();
     _notesController.clear();
+  }
+
+  bool _isValidTime(String input) {
+    final parts = input.split(':');
+    if (parts.length != 2) {
+      return false;
+    }
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) {
+      return false;
+    }
+    return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
   }
 
   Future<void> _deleteEntry(String id) async {

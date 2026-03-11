@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'screens/home_screen.dart';
 import 'services/local_store_service.dart';
+import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -24,6 +25,13 @@ class _SchoolAssistantAppState extends State<SchoolAssistantApp> {
   void initState() {
     super.initState();
     _loadTheme();
+    _initializeNotifications();
+  }
+
+  Future<void> _initializeNotifications() async {
+    await NotificationService.instance.initialize();
+    final entries = await _storeService.loadTimetableEntries();
+    await NotificationService.instance.syncTimetableNotifications(entries);
   }
 
   Future<void> _loadTheme() async {

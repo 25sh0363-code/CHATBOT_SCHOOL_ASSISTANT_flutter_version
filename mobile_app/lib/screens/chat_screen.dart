@@ -283,7 +283,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     tableBorder: TableBorder.all(
-                                      color: textColor.withOpacity(0.3),
+                                      color: textColor.withValues(alpha: 0.3),
                                       width: 1,
                                     ),
                                     tableHead: TextStyle(
@@ -292,8 +292,22 @@ class _ChatScreenState extends State<ChatScreen> {
                                     ),
                                     tableBody: TextStyle(color: textColor),
                                     blockquote: TextStyle(
-                                      color: textColor.withOpacity(0.8),
+                                      color: textColor.withValues(alpha: 0.8),
                                       fontStyle: FontStyle.italic,
+                                    ),
+                                    blockquoteDecoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(0xFF2D4355)
+                                          : const Color(0xFFDCEEFF),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    blockquotePadding: const EdgeInsets.all(12),
+                                    blockquoteAlign: WrapAlignment.start,
+                                    horizontalRuleDecoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(0xFF5C7284)
+                                          : const Color(0xFF9CB6CB),
+                                      borderRadius: BorderRadius.circular(2),
                                     ),
                                     listBullet: TextStyle(color: textColor),
                                   ),
