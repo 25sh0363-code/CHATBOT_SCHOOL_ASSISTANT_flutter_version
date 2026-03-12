@@ -125,6 +125,11 @@ class CollabMeetRequest(BaseModel):
     meet_link: str = Field(default="", max_length=500)
 
 
+class CollabRemoveMemberRequest(BaseModel):
+    owner_email: str = Field(min_length=3, max_length=180)
+    member_email: str = Field(min_length=3, max_length=180)
+
+
 load_dotenv()
 app = FastAPI(title="School Assistant API", version="1.0.0")
 
@@ -814,6 +819,26 @@ def collab_list_rooms(user_email: str = "") -> dict[str, Any]:
     return {"rooms": rooms}
 
 
+@app.delete("/collab/rooms/{room_id}")
+def collab_delete_room(room_id: str, user_email: str = "") -> dict[str, Any]:
+    email = _sanitize_email(user_email)
+    if not email:
+        raise HTTPException(status_code=400, detail="User email is required.")
+
+    with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
+        room = COLLAB_ROOMS.get(room_id)
+        if room is None:
+            raise HTTPException(status_code=404, detail="Collab room not found.")
+
+        if _sanitize_email(room.get("owner_email", "")) != email:
+            raise HTTPException(status_code=403, detail="Only the collab owner can delete this room.")
+
+        del COLLAB_ROOMS[room_id]
+
+    return {"deleted": True, "room_id": room_id}
+
+
 @app.post("/collab/rooms/{room_id}/join")
 def collab_join_room(room_id: str, payload: CollabJoinRoomRequest) -> dict[str, Any]:
     user_email = _sanitize_email(payload.user_email)
@@ -839,6 +864,46 @@ def collab_join_room(room_id: str, payload: CollabJoinRoomRequest) -> dict[str, 
                 "system",
                 f"{user_name} joined the collab.",
             )
+
+    return {"room": _room_public_payload(room)}
+
+
+@app.post("/collab/rooms/{room_id}/remove-member")
+def collab_remove_member(room_id: str, payload: CollabRemoveMemberRequest) -> dict[str, Any]:
+    owner_email = _sanitize_email(payload.owner_email)
+    member_email = _sanitize_email(payload.member_email)
+
+    with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
+        room = COLLAB_ROOMS.get(room_id)
+        if room is None:
+            raise HTTPException(status_code=404, detail="Collab room not found.")
+
+        if _sanitize_email(room.get("owner_email", "")) != owner_email:
+            raise HTTPException(status_code=403, detail="Only the collab owner can remove members.")
+
+        if member_email == owner_email:
+            raise HTTPException(status_code=400, detail="The collab owner cannot remove themselves.")
+
+        existing = next(
+            (m for m in room["members"] if _sanitize_email(m.get("email", "")) == member_email),
+            None,
+        )
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Member not found in this collab.")
+
+        room["members"] = [
+            member for member in room["members"]
+            if _sanitize_email(member.get("email", "")) != member_email
+        ]
+        room.setdefault("member_emails", set()).discard(member_email)
+        _add_room_message(
+            room,
+            owner_email,
+            room.get("owner_name", "Owner"),
+            "system",
+            f"{existing.get('name', 'A member')} was removed from the collab.",
+        )
 
     return {"room": _room_public_payload(room)}
 
