@@ -61,63 +61,101 @@ class NotificationService {
 
     final now = DateTime.now();
     for (final entry in entries) {
-      final scheduleTime = _buildScheduleDateTime(entry);
-      if (scheduleTime == null || !scheduleTime.isAfter(now)) {
-        // Class reminder is skipped if class start time is in the past.
-      } else {
+      final classTime = _normalizeScheduleTime(
+        _buildScheduleDateTime(entry),
+        now,
+      );
+      if (classTime != null) {
         final notificationId = _notificationIdForEntry(entry.id, suffix: 'class');
-        final tzDate = tz.TZDateTime.from(scheduleTime, tz.local);
+        final tzDate = tz.TZDateTime.from(classTime, tz.local);
 
-        await _plugin.zonedSchedule(
-          notificationId,
+        await _scheduleWithFallback(
+          id: notificationId,
           'Upcoming class: ${entry.subject}',
           'Starts at ${entry.startTime}${entry.notes.isEmpty ? '' : ' - ${entry.notes}'}',
           tzDate,
-          const NotificationDetails(
-            android: AndroidNotificationDetails(
-              _timetableChannelId,
-              _timetableChannelName,
-              channelDescription: _timetableChannelDescription,
-              importance: Importance.high,
-              priority: Priority.high,
-            ),
-            iOS: DarwinNotificationDetails(),
-          ),
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-          uiLocalNotificationDateInterpretation:
-              UILocalNotificationDateInterpretation.absoluteTime,
         );
       }
 
-      final homeworkTime = _buildHomeworkReminderDateTime(entry);
-      if (homeworkTime == null || !homeworkTime.isAfter(now)) {
+      final homeworkTime = _normalizeScheduleTime(
+        _buildHomeworkReminderDateTime(entry),
+        now,
+      );
+      if (homeworkTime == null) {
         continue;
       }
 
       final homeworkId = _notificationIdForEntry(entry.id, suffix: 'homework');
       final homeworkTzDate = tz.TZDateTime.from(homeworkTime, tz.local);
-      await _plugin.zonedSchedule(
-        homeworkId,
+      await _scheduleWithFallback(
+        id: homeworkId,
         'Homework reminder: ${entry.subject}',
         entry.homeworkTask.isEmpty
             ? 'Time to finish your homework.'
             : entry.homeworkTask,
         homeworkTzDate,
-        const NotificationDetails(
-          android: AndroidNotificationDetails(
-            _timetableChannelId,
-            _timetableChannelName,
-            channelDescription: _timetableChannelDescription,
-            importance: Importance.high,
-            priority: Priority.high,
-          ),
-          iOS: DarwinNotificationDetails(),
-        ),
+      );
+    }
+  }
+
+  Future<void> _scheduleWithFallback(
+    String title,
+    String body,
+    tz.TZDateTime at,
+    {
+    required int id,
+  }) async {
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _timetableChannelId,
+        _timetableChannelName,
+        channelDescription: _timetableChannelDescription,
+        importance: Importance.high,
+        priority: Priority.high,
+      ),
+      iOS: DarwinNotificationDetails(),
+    );
+
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        at,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    } catch (_) {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        at,
+        details,
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
     }
+  }
+
+  DateTime? _normalizeScheduleTime(DateTime? plannedTime, DateTime now) {
+    if (plannedTime == null) {
+      return null;
+    }
+    if (plannedTime.isAfter(now)) {
+      return plannedTime;
+    }
+
+    // If user saves around the same minute, avoid silently skipping the reminder.
+    final behindBy = now.difference(plannedTime);
+    if (behindBy <= const Duration(minutes: 2)) {
+      return now.add(const Duration(seconds: 10));
+    }
+
+    return null;
   }
 
   DateTime? _buildHomeworkReminderDateTime(TimetableEntry entry) {

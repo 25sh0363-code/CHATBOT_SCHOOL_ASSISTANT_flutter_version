@@ -469,6 +469,14 @@ def generate_notes(
     llm = ChatOpenAI(model_name=CHAT_MODEL, temperature=0)
     prompt = (
         "You are a school note generator. Write clear, exam-ready notes in markdown.\n"
+        "Formatting rules:\n"
+        "- Use markdown headings and subheadings.\n"
+        "- Use bullet lists for key points and numbered steps where needed.\n"
+        "- Include at least one markdown table when comparison/summary helps.\n"
+        "- Preserve math/science symbols and signs (e.g., +/- <= >= != theta alpha beta delta pi mu sigma omega sqrt).\n"
+        "- Use clean Unicode symbols where useful (x, dot, +- , ~=, <=, >=, !=, theta, alpha, beta, delta, pi, mu, sigma, omega, sqrt).\n"
+        "- Add light, relevant emojis for section labels (example: Overview, Key Points, Formulas, Quick Revision).\n"
+        "- Keep spacing readable and output polished for direct study use.\n"
         "Structure output with: Overview, Key Concepts, Important Points, Formula/Examples (if relevant), and Quick Revision Checklist.\n"
         "Keep it concise but complete for revision.\n\n"
         f"Topic: {topic.strip()}\n\n"

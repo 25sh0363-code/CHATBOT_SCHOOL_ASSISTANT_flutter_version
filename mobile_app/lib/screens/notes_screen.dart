@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import '../config/app_config.dart';
 import '../models/quick_note.dart';
@@ -369,25 +371,54 @@ class _NotesScreenState extends State<NotesScreen> {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final note = _notes[index];
-                      return ListTile(
+                      return ExpansionTile(
                         title: Text(note.topic),
-                        subtitle: Text(
-                          '${note.content}\nUpdated: ${_formatDateTime(note.updatedAt)}',
-                        ),
-                        isThreeLine: true,
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit_outlined),
-                              onPressed: () => _editNote(note),
+                        subtitle: Text('Updated: ${_formatDateTime(note.updatedAt)}'),
+                        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        children: [
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: MediaQuery.of(context).size.width - 64,
+                              child: MarkdownBody(
+                                data: note.content,
+                                selectable: true,
+                                extensionSet: md.ExtensionSet.gitHubFlavored,
+                                styleSheet: MarkdownStyleSheet(
+                                  p: Theme.of(context).textTheme.bodyMedium,
+                                  tableBorder: TableBorder.all(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .outline
+                                        .withValues(alpha: 0.4),
+                                  ),
+                                  tableHead: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                  tableBody: Theme.of(context).textTheme.bodyMedium,
+                                  code: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        fontFamily: 'monospace',
+                                      ),
+                                ),
+                              ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _deleteNote(note.id),
-                            ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined),
+                                onPressed: () => _editNote(note),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () => _deleteNote(note.id),
+                              ),
+                            ],
+                          ),
+                        ],
                       );
                     },
                   ),
