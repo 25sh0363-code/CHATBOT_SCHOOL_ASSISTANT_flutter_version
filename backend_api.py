@@ -22,13 +22,19 @@ from pydantic import BaseModel, Field
 from PyPDF2 import PdfReader
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4.1")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4.1-nano")
+NOTES_MODEL = os.getenv("NOTES_MODEL", "gpt-4.1-mini")
 VISION_CHAT_MODEL = os.getenv("VISION_CHAT_MODEL", "gpt-4.1-mini")
 VECTORSTORE_DIR = Path("vectorstore/faiss_index")
 VECTORSTORE_INDEX_PATH = VECTORSTORE_DIR / "index.faiss"
-RETRIEVAL_CANDIDATE_K = int(os.getenv("RETRIEVAL_CANDIDATE_K", "18"))
-RETRIEVAL_FINAL_K = int(os.getenv("RETRIEVAL_FINAL_K", "10"))
-RETRIEVAL_CHARS_PER_CHUNK = int(os.getenv("RETRIEVAL_CHARS_PER_CHUNK", "1100"))
+RETRIEVAL_CANDIDATE_K = int(os.getenv("RETRIEVAL_CANDIDATE_K", "10"))
+RETRIEVAL_FINAL_K = int(os.getenv("RETRIEVAL_FINAL_K", "5"))
+RETRIEVAL_CHARS_PER_CHUNK = int(os.getenv("RETRIEVAL_CHARS_PER_CHUNK", "700"))
+RETRIEVAL_MAX_CONTEXT_CHARS = int(os.getenv("RETRIEVAL_MAX_CONTEXT_CHARS", "2800"))
+MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "3"))
+MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "500"))
+CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "650"))
+NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1200"))
 
 
 class ChatRequest(BaseModel):
@@ -299,14 +305,25 @@ def get_retrieved_context(question: str) -> tuple[str, int]:
         return "", 0
 
     context_parts: list[str] = []
-    for index, doc in enumerate(docs, start=1):
-        meta = getattr(doc, "metadata", {}) or {}
-        source = Path(str(meta.get("source", f"chunk-{index}"))).name
+    total_chars = 0
+    for doc in docs:
         snippet = (getattr(doc, "page_content", "") or "")[:RETRIEVAL_CHARS_PER_CHUNK]
+        snippet = snippet.strip()
+        if not snippet:
+            continue
+
+        remaining_chars = RETRIEVAL_MAX_CONTEXT_CHARS - total_chars
+        if remaining_chars <= 0:
+            break
+
+        if len(snippet) > remaining_chars:
+            snippet = snippet[:remaining_chars].rstrip()
+
         # Don't include source labels in context to avoid them appearing in output
         context_parts.append(snippet)
+        total_chars += len(snippet)
 
-    return "\n\n".join(context_parts), len(docs)
+    return "\n\n".join(context_parts), len(context_parts)
 
 
 def strip_source_citations(text: str) -> str:
@@ -330,6 +347,30 @@ def build_conversation_messages(history: list[dict[str, str]], system_prompt: st
     # Add current question
     messages.append(HumanMessage(content=user_message))
     return messages
+
+
+def trim_history(history: list[dict[str, str]] | None) -> list[dict[str, str]]:
+    if not history:
+        return []
+
+    trimmed_history: list[dict[str, str]] = []
+    for msg in history[-MAX_HISTORY_MESSAGES:]:
+        role = str(msg.get("role", "")).strip()
+        if role not in {"user", "assistant"}:
+            continue
+
+        content = str(msg.get("content", "")).strip()
+        if not content:
+            continue
+
+        trimmed_history.append(
+            {
+                "role": role,
+                "content": content[:MAX_HISTORY_CHARS_PER_MESSAGE],
+            }
+        )
+
+    return trimmed_history
 
 
 def _now_iso() -> str:
@@ -429,6 +470,8 @@ def _add_room_message(
 def answer_question(question: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
     if history is None:
         history = []
+
+    history = trim_history(history)
     
     context, chunk_count = get_retrieved_context(question)
     used_context = bool(context.strip())
@@ -468,7 +511,7 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
 
     messages = build_conversation_messages(history, system_prompt, question)
 
-    llm = ChatOpenAI(model_name=CHAT_MODEL, temperature=0)
+    llm = ChatOpenAI(model_name=CHAT_MODEL, temperature=0, max_tokens=CHAT_MAX_TOKENS)
     result = llm.invoke(messages)
 
     answer = make_math_readable(str(result.content).strip())
@@ -484,6 +527,8 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
 def answer_question_with_image(question: str, image_base64: str, mime_type: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
     if history is None:
         history = []
+
+    history = trim_history(history)
     
     context, chunk_count = get_retrieved_context(question)
     used_context = bool(context.strip())
@@ -521,9 +566,9 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
   
     if history:
         prompt_text += "\nConversation history:\n"
-        for msg in history[-6:]:  # Last 6 messages for context
+        for msg in history:
             role = msg.get("role", "")
-            content = msg.get("content", "")[:300]  # Truncate for brevity
+            content = msg.get("content", "")
             prompt_text += f"{role}: {content}\n"
         prompt_text += "\n"
     
@@ -635,7 +680,7 @@ def generate_notes(
 
     context_text = "\n\n".join(context_blocks) if context_blocks else "No extra context provided."
 
-    llm = ChatOpenAI(model_name=CHAT_MODEL, temperature=0)
+    llm = ChatOpenAI(model_name=NOTES_MODEL, temperature=0.2, max_tokens=NOTES_MAX_TOKENS)
     prompt = (
         "You are a school note generator. Write clear, exam-ready notes in markdown.\n"
         "Formatting rules:\n"
@@ -644,10 +689,11 @@ def generate_notes(
         "- Include at least one markdown table when comparison/summary helps.\n"
         "- Preserve math/science symbols and signs (e.g., +/- <= >= != theta alpha beta delta pi mu sigma omega sqrt).\n"
         "- Use clean Unicode symbols where useful (x, dot, +- , ~=, <=, >=, !=, theta, alpha, beta, delta, pi, mu, sigma, omega, sqrt).\n"
-        "- Add light, relevant emojis for section labels (example: Overview, Key Points, Formulas, Quick Revision).\n"
         "- Keep spacing readable and output polished for direct study use.\n"
         "Structure output with: Overview, Key Concepts, Important Points, Formula/Examples (if relevant), and Quick Revision Checklist.\n"
-        "Keep it concise but complete for revision.\n\n"
+        "Keep it concise but complete for revision.\n"
+        "Prefer substance over length: include definitions, core logic, formulas, common mistakes, and quick revision cues when relevant.\n"
+        "If context from user details or attachments is present, ground the notes in that material first.\n\n"
         f"Topic: {topic.strip()}\n\n"
         f"Context:\n{context_text}"
     )
