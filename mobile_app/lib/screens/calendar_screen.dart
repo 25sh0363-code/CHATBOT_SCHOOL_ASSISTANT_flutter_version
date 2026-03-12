@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 
+import '../models/homework_task.dart';
 import '../models/test_record.dart';
 import '../models/timetable_entry.dart';
 import '../services/local_store_service.dart';
@@ -19,6 +20,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _selectedDay = DateTime.now();
   List<TestRecord> _tests = [];
   List<TimetableEntry> _entries = [];
+  List<HomeworkTask> _items = [];
 
   @override
   void initState() {
@@ -29,9 +31,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Future<void> _load() async {
     final tests = await widget.storeService.loadTests();
     final entries = await widget.storeService.loadTimetableEntries();
+    final items = await widget.storeService.loadHomeworkTasks();
     setState(() {
       _tests = tests;
       _entries = entries;
+      _items = items;
     });
   }
 
@@ -51,10 +55,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }).toList();
   }
 
+  List<HomeworkTask> _itemsForDay(DateTime day) {
+    return _items.where((item) {
+      return item.date.year == day.year &&
+          item.date.month == day.month &&
+          item.date.day == day.day;
+    }).toList();
+  }
+
   List<Object> _eventsForDay(DateTime day) {
     return <Object>[
       ..._testsForDay(day),
       ..._entriesForDay(day),
+      ..._itemsForDay(day),
     ];
   }
 
@@ -62,6 +75,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget build(BuildContext context) {
     final tests = _testsForDay(_selectedDay);
     final entries = _entriesForDay(_selectedDay);
+    final items = _itemsForDay(_selectedDay);
+    final homework =
+      items.where((item) => item.kind == HomeworkTask.kindHomework).toList();
+    final tasks =
+      items.where((item) => item.kind != HomeworkTask.kindHomework).toList();
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -97,8 +115,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
           SizedBox(
             height: 260,
             child: Card(
-              child: (tests.isEmpty && entries.isEmpty)
-                  ? const Center(child: Text('No tests or timetable entries for selected day'))
+              child: (tests.isEmpty && entries.isEmpty && homework.isEmpty && tasks.isEmpty)
+                  ? const Center(
+                      child: Text('No tests, timetable, tasks or homework for selected day'),
+                    )
                   : ListView(
                       children: [
                         if (tests.isNotEmpty)
@@ -120,6 +140,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             title: Text(entry.subject),
                             subtitle: Text(entry.notes.isEmpty ? 'Class slot' : entry.notes),
                             trailing: Text('${entry.startTime}-${entry.endTime}'),
+                          ),
+                        if (homework.isNotEmpty)
+                          const ListTile(
+                            title: Text('Homework', style: TextStyle(fontWeight: FontWeight.w600)),
+                          ),
+                        for (final item in homework)
+                          ListTile(
+                            title: Text(item.title),
+                            subtitle: Text(item.notes.isEmpty ? 'Homework item' : item.notes),
+                            trailing: Text(item.reminderTime),
+                          ),
+                        if (tasks.isNotEmpty)
+                          const ListTile(
+                            title: Text('Tasks', style: TextStyle(fontWeight: FontWeight.w600)),
+                          ),
+                        for (final item in tasks)
+                          ListTile(
+                            title: Text(item.title),
+                            subtitle: Text(item.notes.isEmpty ? 'Task item' : item.notes),
+                            trailing: Text(item.reminderTime),
                           ),
                       ],
                     ),

@@ -1,97 +1,87 @@
-# 📚 School Assistant – Chemistry & Physics AI Tutor
+# School Assistant - Chemistry & Physics AI Tutor
 
-A mobile learning assistant designed to help students understand **Chemistry and Physics concepts quickly and clearly**.
+School Assistant is a Flutter + FastAPI project that helps students study faster with AI, track tests, and manage daily school work.
 
-The app provides AI-powered explanations, concept search, and educational assistance tailored for school-level science topics.
+## Features
 
----
+- AI chat for Chemistry and Physics with retrieval-augmented context
+- Image-based Q&A support in chat
+- Notes generation from topic + optional PDF/image attachments
+- Markdown notes viewer with support for rich formatting
+- Tests module with marks tracking and performance trends
+- Calendar module for viewing tests and timetable events by day
+- Timetable planner with a single add form for both:
+	- Task items
+	- Homework items
+- Separate lists for Tasks and Homework inside timetable view
+- Native calendar handoff for reminder scheduling
+- Local persistence for chat, tests, timetable, tasks, homework, and notes
+- Light and dark theme support
 
-# 🚀 Features
+## Platform Support
 
-### 🧠 AI Science Tutor
-Ask questions about **Chemistry and Physics** and receive clear, easy-to-understand explanations.
+- Android (APK build)
+- macOS (desktop build)
 
-### 🔍 Concept Search
-Find explanations for important science concepts quickly.
+## Project Structure
 
-### 📖 Curriculum-Focused Knowledge
-Responses are based on curated school-level science content.
+- `mobile_app/`: Flutter client (Android + macOS)
+- `backend_api.py`: FastAPI backend with chat and notes endpoints
+- `vectorstore/`: FAISS index data for retrieval
+- `scripts/`: helper scripts for local setup/run
 
-### ⚡ Fast Responses
-Uses a vector database to quickly retrieve relevant educational information.
+## Backend Endpoints
 
-### 📱 Mobile App
-Built with **Flutter** for a smooth experience on Android devices.
+- `POST /chat`: text chat with retrieval context
+- `POST /chat/image`: image + question flow
+- `POST /notes/generate`: AI-generated structured study notes
 
-### 🤖 AI-Powered Backend
-Uses an AI backend to generate explanations and answers.
+## Local Run
 
-### 🗂 Knowledge Retrieval System
-A vector database helps the system find the most relevant scientific explanations before generating responses.
+1. Start backend from repo root:
 
----
+```bash
+uvicorn backend_api:app --host 0.0.0.0 --port 8000 --reload
+```
 
-# 🎯 Purpose
+2. Run Flutter app:
 
-This project aims to:
+```bash
+cd mobile_app
+flutter pub get
+flutter run --dart-define=BACKEND_BASE_URL=http://127.0.0.1:8000
+```
 
-- Help students understand **complex science topics easily**
-- Provide **instant academic support**
-- Encourage **self-learning**
-- Make science **more accessible and interactive**
+## Build
 
----
+Android APK:
 
-# 🧪 Subjects Covered
+```bash
+cd mobile_app
+flutter build apk --release
+```
 
-Currently focused on:
+APK output:
 
-- **Chemistry**
-- **Physics**
+- `mobile_app/build/app/outputs/flutter-apk/app-release.apk`
 
-Future versions may expand to include:
+macOS desktop app:
 
-- Mathematics  
-- Biology  
-- Exam preparation modules  
+```bash
+cd mobile_app
+flutter build macos --release
+```
 
----
+macOS prerequisite:
 
-# 🏗 Project Architecture (Simple Overview)
+- Full Xcode installation is required (`xcodebuild` must be available).
+- After installing Xcode, run:
 
-The system consists of three main components:
+```bash
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -runFirstLaunch
+```
 
-### 📱 Mobile Application
-Built using **Flutter** to provide an easy-to-use interface for students.
+## Author
 
-### ⚙ Backend API
-Built using **FastAPI** to process requests and generate AI responses.
-
-### 🧠 Knowledge Database
-A **vector database** is used to retrieve relevant educational content efficiently.
-
----
-
-# 📚 Resources Referenced
-
-Some learning resources and tutorials that helped during development:
-
-- https://www.youtube.com/watch?v=74c3KaAXPvk  
-- https://www.youtube.com/watch?v=dXxQ0LR-3Hg  
-
----
-
-# 📌 Portfolio Note
-
-This project demonstrates practical skills in:
-
-- **Retrieval-Augmented Generation (RAG)**
-- **LLM application development**
-- **Prompt design for educational assistants**
-- **End-to-end deployment-ready workflows**
-
----
-
-# 👨‍💻 Author
-
-**Om Suraj Kashikar**
+Om Suraj Kashikar

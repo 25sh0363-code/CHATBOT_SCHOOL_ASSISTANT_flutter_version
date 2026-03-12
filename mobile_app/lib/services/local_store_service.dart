@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/chat_message.dart';
+import '../models/homework_task.dart';
 import '../models/quick_note.dart';
 import '../models/test_record.dart';
 import '../models/timetable_entry.dart';
@@ -15,6 +16,7 @@ class LocalStoreService {
   static const String _darkModeKey = 'dark_mode_v1';
   static const String _chatHistoryKey = 'chat_history_v1';
   static const String _quickNotesKey = 'quick_notes_v1';
+  static const String _homeworkTasksKey = 'homework_tasks_v1';
 
   Future<List<TestRecord>> loadTests() async {
     final prefs = await SharedPreferences.getInstance();
@@ -133,5 +135,32 @@ class LocalStoreService {
     final prefs = await SharedPreferences.getInstance();
     final payload = jsonEncode(notes.map((e) => e.toJson()).toList());
     await prefs.setString(_quickNotesKey, payload);
+  }
+
+  Future<List<HomeworkTask>> loadHomeworkTasks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_homeworkTasksKey);
+    if (raw == null || raw.isEmpty) {
+      return [];
+    }
+
+    final list = (jsonDecode(raw) as List<dynamic>)
+        .cast<Map<String, dynamic>>()
+        .map(HomeworkTask.fromJson)
+        .toList();
+    list.sort((a, b) {
+      final dateCompare = a.date.compareTo(b.date);
+      if (dateCompare != 0) {
+        return dateCompare;
+      }
+      return a.reminderTime.compareTo(b.reminderTime);
+    });
+    return list;
+  }
+
+  Future<void> saveHomeworkTasks(List<HomeworkTask> tasks) async {
+    final prefs = await SharedPreferences.getInstance();
+    final payload = jsonEncode(tasks.map((e) => e.toJson()).toList());
+    await prefs.setString(_homeworkTasksKey, payload);
   }
 }
