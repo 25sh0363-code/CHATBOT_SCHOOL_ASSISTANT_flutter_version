@@ -1,5 +1,6 @@
 import os
 import base64
+import io
 import re
 import tempfile
 import urllib.request
@@ -15,6 +16,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from pydantic import BaseModel, Field
+from PyPDF2 import PdfReader
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4.1")
@@ -42,6 +44,23 @@ class ChatResponse(BaseModel):
     answer: str
     used_context: bool
     context_chunks: int
+
+
+class NoteAttachment(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+    base64_data: str = Field(min_length=20)
+    mime_type: str = Field(min_length=3, max_length=120)
+
+
+class NotesGenerationRequest(BaseModel):
+    topic: str = Field(min_length=1, max_length=200)
+    details: str = Field(default="", max_length=5000)
+    attachments: list[NoteAttachment] = Field(default_factory=list)
+
+
+class NotesGenerationResponse(BaseModel):
+    note: str
+    attachments_processed: int
 
 
 load_dotenv()
@@ -369,6 +388,102 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
     )
 
 
+def _extract_pdf_text(attachment: NoteAttachment) -> str:
+    data = base64.b64decode(attachment.base64_data, validate=True)
+    reader = PdfReader(io.BytesIO(data))
+    chunks: list[str] = []
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        if text.strip():
+            chunks.append(text.strip())
+
+    content = "\n\n".join(chunks).strip()
+    if not content:
+        return ""
+    return content[:7000]
+
+
+def _extract_image_text(attachment: NoteAttachment, topic: str) -> str:
+    base64.b64decode(attachment.base64_data, validate=True)
+
+    vision_llm = ChatOpenAI(model_name=VISION_CHAT_MODEL, temperature=0)
+    ai_message = vision_llm.invoke(
+        [
+            HumanMessage(
+                content=[
+                    {
+                        "type": "text",
+                        "text": (
+                            "You are extracting study points from an image for school notes. "
+                            f"Topic: {topic}. "
+                            "Return concise bullet points of key concepts, definitions, formulas, and examples visible in the image."
+                        ),
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{attachment.mime_type};base64,{attachment.base64_data}"
+                        },
+                    },
+                ]
+            )
+        ]
+    )
+
+    text = str(ai_message.content).strip()
+    return text[:3500]
+
+
+def generate_notes(
+    topic: str,
+    details: str,
+    attachments: list[NoteAttachment],
+) -> NotesGenerationResponse:
+    extracted_sections: list[str] = []
+
+    for attachment in attachments:
+        mime = attachment.mime_type.lower().strip()
+        name = attachment.name.strip()
+        section_text = ""
+
+        if "pdf" in mime or name.lower().endswith(".pdf"):
+            section_text = _extract_pdf_text(attachment)
+        elif mime.startswith("image/"):
+            section_text = _extract_image_text(attachment, topic)
+        else:
+            continue
+
+        if section_text.strip():
+            extracted_sections.append(
+                f"Source: {name}\n{section_text.strip()}"
+            )
+
+    context_blocks: list[str] = []
+    if details.strip():
+        context_blocks.append(f"User details:\n{details.strip()}")
+    if extracted_sections:
+        context_blocks.append("Extracted content from files/images:\n" + "\n\n".join(extracted_sections))
+
+    context_text = "\n\n".join(context_blocks) if context_blocks else "No extra context provided."
+
+    llm = ChatOpenAI(model_name=CHAT_MODEL, temperature=0)
+    prompt = (
+        "You are a school note generator. Write clear, exam-ready notes in markdown.\n"
+        "Structure output with: Overview, Key Concepts, Important Points, Formula/Examples (if relevant), and Quick Revision Checklist.\n"
+        "Keep it concise but complete for revision.\n\n"
+        f"Topic: {topic.strip()}\n\n"
+        f"Context:\n{context_text}"
+    )
+
+    result = llm.invoke([HumanMessage(content=prompt)])
+    note = make_math_readable(str(result.content).strip())
+
+    return NotesGenerationResponse(
+        note=note,
+        attachments_processed=len(extracted_sections),
+    )
+
+
 @app.get("/health")
 def health_check() -> dict:
     key_present = bool(os.getenv("OPENAI_API_KEY", "").strip())
@@ -406,6 +521,20 @@ def chat_with_image(payload: ImageChatRequest) -> ChatResponse:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Image chat failed: {exc}") from exc
+
+
+@app.post("/notes/generate", response_model=NotesGenerationResponse)
+def notes_generate(payload: NotesGenerationRequest) -> NotesGenerationResponse:
+    try:
+        return generate_notes(
+            topic=payload.topic,
+            details=payload.details,
+            attachments=payload.attachments,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid attachment payload: {exc}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Notes generation failed: {exc}") from exc
 
 
 @app.on_event("startup")

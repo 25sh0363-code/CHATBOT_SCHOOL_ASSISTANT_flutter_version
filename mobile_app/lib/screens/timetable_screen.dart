@@ -18,6 +18,9 @@ class _TimetableScreenState extends State<TimetableScreen> {
   final TextEditingController _startController = TextEditingController();
   final TextEditingController _endController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
+  final TextEditingController _homeworkController = TextEditingController();
+  final TextEditingController _homeworkReminderController =
+      TextEditingController();
 
   DateTime _selectedDate = DateTime.now();
   List<TimetableEntry> _entries = <TimetableEntry>[];
@@ -46,6 +49,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final subject = _subjectController.text.trim();
     final start = _startController.text.trim();
     final end = _endController.text.trim();
+    final homeworkTask = _homeworkController.text.trim();
+    final homeworkReminderTime = _homeworkReminderController.text.trim();
 
     if (subject.isEmpty || start.isEmpty || end.isEmpty) {
       return;
@@ -58,6 +63,20 @@ class _TimetableScreenState extends State<TimetableScreen> {
       return;
     }
 
+    if (homeworkReminderTime.isNotEmpty && !_isValidTime(homeworkReminderTime)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Homework reminder must be in HH:MM format.')),
+      );
+      return;
+    }
+
+    if (homeworkTask.isNotEmpty && homeworkReminderTime.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Set a homework reminder time for the task.')),
+      );
+      return;
+    }
+
     final entry = TimetableEntry(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       subject: subject,
@@ -65,6 +84,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
       startTime: start,
       endTime: end,
       notes: _notesController.text.trim(),
+      homeworkTask: homeworkTask,
+      homeworkReminderTime: homeworkReminderTime,
     );
 
     setState(() {
@@ -77,6 +98,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
     _startController.clear();
     _endController.clear();
     _notesController.clear();
+    _homeworkController.clear();
+    _homeworkReminderController.clear();
   }
 
   bool _isValidTime(String input) {
@@ -105,6 +128,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
     _startController.dispose();
     _endController.dispose();
     _notesController.dispose();
+    _homeworkController.dispose();
+    _homeworkReminderController.dispose();
     super.dispose();
   }
 
@@ -166,6 +191,20 @@ class _TimetableScreenState extends State<TimetableScreen> {
                     controller: _notesController,
                     decoration: const InputDecoration(labelText: 'Notes (optional)'),
                   ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _homeworkController,
+                    decoration: const InputDecoration(
+                      labelText: 'Homework for this day (optional)',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _homeworkReminderController,
+                    decoration: const InputDecoration(
+                      labelText: 'Homework reminder time HH:MM (optional)',
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   FilledButton(onPressed: _addEntry, child: const Text('Save timetable entry')),
                 ],
@@ -187,9 +226,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
                     itemBuilder: (context, index) {
                       final item = _entries[index];
                       final date = item.date.toIso8601String().split('T').first;
+                      final homeworkText = item.homeworkTask.isEmpty
+                          ? ''
+                          : '\nHomework: ${item.homeworkTask}${item.homeworkReminderTime.isEmpty ? '' : ' (Reminder ${item.homeworkReminderTime})'}';
                       return ListTile(
                         title: Text(item.subject),
-                        subtitle: Text('$date   ${item.startTime} - ${item.endTime}${item.notes.isEmpty ? '' : '\n${item.notes}'}'),
+                        subtitle: Text('$date   ${item.startTime} - ${item.endTime}${item.notes.isEmpty ? '' : '\n${item.notes}'}$homeworkText'),
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline),
                           onPressed: () => _deleteEntry(item.id),

@@ -6,6 +6,8 @@ class TimetableEntry {
     required this.startTime,
     required this.endTime,
     this.notes = '',
+    this.homeworkTask = '',
+    this.homeworkReminderTime = '',
   });
 
   final String id;
@@ -14,6 +16,8 @@ class TimetableEntry {
   final String startTime;
   final String endTime;
   final String notes;
+  final String homeworkTask;
+  final String homeworkReminderTime;
 
   Map<String, dynamic> toJson() {
     return {
@@ -23,6 +27,8 @@ class TimetableEntry {
       'startTime': startTime,
       'endTime': endTime,
       'notes': notes,
+      'homeworkTask': homeworkTask,
+      'homeworkReminderTime': homeworkReminderTime,
     };
   }
 
@@ -34,6 +40,8 @@ class TimetableEntry {
       startTime: json['startTime'] as String,
       endTime: json['endTime'] as String,
       notes: (json['notes'] as String?) ?? '',
+      homeworkTask: (json['homeworkTask'] as String?) ?? '',
+      homeworkReminderTime: (json['homeworkReminderTime'] as String?) ?? '',
     );
   }
 }

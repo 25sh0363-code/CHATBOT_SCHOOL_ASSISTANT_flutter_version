@@ -1,6 +1,11 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../config/app_config.dart';
 import '../models/quick_note.dart';
+import '../services/chat_api_service.dart';
 import '../services/local_store_service.dart';
 
 class NotesScreen extends StatefulWidget {
@@ -14,9 +19,14 @@ class NotesScreen extends StatefulWidget {
 
 class _NotesScreenState extends State<NotesScreen> {
   final TextEditingController _topicController = TextEditingController();
+  final TextEditingController _detailsController = TextEditingController();
   final TextEditingController _contentController = TextEditingController();
+  final ChatApiService _chatApiService =
+      ChatApiService(baseUrl: AppConfig.backendBaseUrl);
 
   List<QuickNote> _notes = <QuickNote>[];
+  final List<_SelectedAttachment> _attachments = <_SelectedAttachment>[];
+  bool _generating = false;
 
   @override
   void initState() {
@@ -60,7 +70,110 @@ class _NotesScreenState extends State<NotesScreen> {
     await _save();
 
     _topicController.clear();
+    _detailsController.clear();
     _contentController.clear();
+    setState(() {
+      _attachments.clear();
+    });
+  }
+
+  Future<void> _pickAttachments() async {
+    if (_generating) {
+      return;
+    }
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
+      allowMultiple: true,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+
+    final selected = <_SelectedAttachment>[];
+    for (final file in result.files) {
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        continue;
+      }
+      selected.add(
+        _SelectedAttachment(
+          name: file.name,
+          mimeType: _mimeTypeFromFilename(file.name),
+          base64Data: base64Encode(bytes),
+        ),
+      );
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _attachments
+        ..clear()
+        ..addAll(selected);
+    });
+  }
+
+  String _mimeTypeFromFilename(String filename) {
+    final lower = filename.toLowerCase();
+    if (lower.endsWith('.pdf')) {
+      return 'application/pdf';
+    }
+    if (lower.endsWith('.png')) {
+      return 'image/png';
+    }
+    if (lower.endsWith('.webp')) {
+      return 'image/webp';
+    }
+    return 'image/jpeg';
+  }
+
+  Future<void> _generateNote() async {
+    final topic = _topicController.text.trim();
+    if (topic.isEmpty || _generating) {
+      return;
+    }
+
+    setState(() {
+      _generating = true;
+    });
+
+    try {
+      final note = await _chatApiService.generateNotes(
+        topic: topic,
+        details: _detailsController.text.trim(),
+        attachments: _attachments
+            .map(
+              (item) => NoteGenerationAttachment(
+                name: item.name,
+                base64Data: item.base64Data,
+                mimeType: item.mimeType,
+              ),
+            )
+            .toList(),
+      );
+      if (!mounted) {
+        return;
+      }
+      _contentController.text = note;
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not generate notes: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _generating = false;
+        });
+      }
+    }
   }
 
   Future<void> _editNote(QuickNote note) async {
@@ -152,6 +265,7 @@ class _NotesScreenState extends State<NotesScreen> {
   @override
   void dispose() {
     _topicController.dispose();
+    _detailsController.dispose();
     _contentController.dispose();
     super.dispose();
   }
@@ -180,10 +294,56 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                   const SizedBox(height: 10),
                   TextField(
-                    controller: _contentController,
+                    controller: _detailsController,
                     maxLines: 4,
                     decoration: const InputDecoration(
-                      labelText: 'Write your note',
+                      labelText: 'Details / instructions (optional)',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _pickAttachments,
+                        icon: const Icon(Icons.attach_file_outlined),
+                        label: const Text('Add PDF/Image'),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _generating ? null : _generateNote,
+                          icon: _generating
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.auto_awesome_outlined),
+                          label: const Text('Generate Notes'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_attachments.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _attachments
+                          .map(
+                            (file) => Chip(
+                              label: Text(file.name),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _contentController,
+                    maxLines: 8,
+                    decoration: const InputDecoration(
+                      labelText: 'Generated note / manual note',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -236,4 +396,16 @@ class _NotesScreenState extends State<NotesScreen> {
       ),
     );
   }
+}
+
+class _SelectedAttachment {
+  const _SelectedAttachment({
+    required this.name,
+    required this.base64Data,
+    required this.mimeType,
+  });
+
+  final String name;
+  final String base64Data;
+  final String mimeType;
 }

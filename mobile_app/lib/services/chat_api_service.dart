@@ -9,6 +9,40 @@ class ChatApiService {
   final String baseUrl;
   final http.Client _client;
 
+  Future<String> generateNotes({
+    required String topic,
+    required String details,
+    List<NoteGenerationAttachment> attachments = const [],
+  }) async {
+    final uri = Uri.parse('$baseUrl/notes/generate');
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'topic': topic,
+        'details': details,
+        'attachments': attachments
+            .map((a) => {
+                  'name': a.name,
+                  'base64_data': a.base64Data,
+                  'mime_type': a.mimeType,
+                })
+            .toList(),
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error ${response.statusCode}: ${response.body}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final note = data['note'];
+    if (note is! String || note.trim().isEmpty) {
+      throw Exception('Invalid note response from backend.');
+    }
+    return note;
+  }
+
   Future<String> sendMessage(String question, {List<Map<String, String>>? history}) async {
     final uri = Uri.parse('$baseUrl/chat');
     final response = await _client.post(
@@ -74,4 +108,16 @@ class ChatApiService {
     final vectorReady = data['vector_ready'];
     return status == 'ok' && vectorReady == true;
   }
+}
+
+class NoteGenerationAttachment {
+  const NoteGenerationAttachment({
+    required this.name,
+    required this.base64Data,
+    required this.mimeType,
+  });
+
+  final String name;
+  final String base64Data;
+  final String mimeType;
 }

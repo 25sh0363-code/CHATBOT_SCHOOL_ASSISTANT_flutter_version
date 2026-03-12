@@ -63,17 +63,46 @@ class NotificationService {
     for (final entry in entries) {
       final scheduleTime = _buildScheduleDateTime(entry);
       if (scheduleTime == null || !scheduleTime.isAfter(now)) {
+        // Class reminder is skipped if class start time is in the past.
+      } else {
+        final notificationId = _notificationIdForEntry(entry.id, suffix: 'class');
+        final tzDate = tz.TZDateTime.from(scheduleTime, tz.local);
+
+        await _plugin.zonedSchedule(
+          notificationId,
+          'Upcoming class: ${entry.subject}',
+          'Starts at ${entry.startTime}${entry.notes.isEmpty ? '' : ' - ${entry.notes}'}',
+          tzDate,
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              _timetableChannelId,
+              _timetableChannelName,
+              channelDescription: _timetableChannelDescription,
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
+            iOS: DarwinNotificationDetails(),
+          ),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+        );
+      }
+
+      final homeworkTime = _buildHomeworkReminderDateTime(entry);
+      if (homeworkTime == null || !homeworkTime.isAfter(now)) {
         continue;
       }
 
-      final notificationId = _notificationIdForEntry(entry.id);
-      final tzDate = tz.TZDateTime.from(scheduleTime, tz.local);
-
+      final homeworkId = _notificationIdForEntry(entry.id, suffix: 'homework');
+      final homeworkTzDate = tz.TZDateTime.from(homeworkTime, tz.local);
       await _plugin.zonedSchedule(
-        notificationId,
-        'Upcoming class: ${entry.subject}',
-        'Starts at ${entry.startTime}${entry.notes.isEmpty ? '' : ' - ${entry.notes}'}',
-        tzDate,
+        homeworkId,
+        'Homework reminder: ${entry.subject}',
+        entry.homeworkTask.isEmpty
+            ? 'Time to finish your homework.'
+            : entry.homeworkTask,
+        homeworkTzDate,
         const NotificationDetails(
           android: AndroidNotificationDetails(
             _timetableChannelId,
@@ -84,11 +113,29 @@ class NotificationService {
           ),
           iOS: DarwinNotificationDetails(),
         ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
     }
+  }
+
+  DateTime? _buildHomeworkReminderDateTime(TimetableEntry entry) {
+    if (entry.homeworkReminderTime.trim().isEmpty) {
+      return null;
+    }
+    final parsedTime = _parse24HourTime(entry.homeworkReminderTime);
+    if (parsedTime == null) {
+      return null;
+    }
+
+    return DateTime(
+      entry.date.year,
+      entry.date.month,
+      entry.date.day,
+      parsedTime.$1,
+      parsedTime.$2,
+    );
   }
 
   DateTime? _buildScheduleDateTime(TimetableEntry entry) {
@@ -123,7 +170,12 @@ class NotificationService {
     return (hour, minute);
   }
 
-  int _notificationIdForEntry(String id) {
-    return id.hashCode & 0x7fffffff;
+  int _notificationIdForEntry(String id, {required String suffix}) {
+    final key = '$id:$suffix';
+    var hash = 0;
+    for (final codeUnit in key.codeUnits) {
+      hash = ((hash * 31) + codeUnit) & 0x7fffffff;
+    }
+    return hash;
   }
 }
