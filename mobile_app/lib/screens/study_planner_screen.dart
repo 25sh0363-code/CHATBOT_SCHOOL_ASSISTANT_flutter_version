@@ -186,17 +186,26 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Focus timer started for $_focusMinutes minutes. You will get a popup reminder even outside this tab.',
-        ),
-      ),
+    _showFocusDialog();
+  }
+
+  void _showFocusDialog() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _FocusTimerDialog(minutes: _focusMinutes),
     );
   }
 
   Future<void> _stopFocusTimer() async {
     await FocusTimerService.instance.stop();
+  }
+
+  void _reopenFocusDialog() {
+    // If a session is running and user taps the card again, reopen the dialog.
+    if (FocusTimerService.instance.isRunning) {
+      _showFocusDialog();
+    }
   }
 
   List<_RevisionEntry> _buildRevisionPlan() {
@@ -383,67 +392,71 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
               ),
               const SizedBox(height: 12),
               Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Focus Session Timer',
-                          style: theme.textTheme.titleLarge),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          ChoiceChip(
-                            label: const Text('25m'),
-                            selected: _focusMinutes == 25,
-                            onSelected: (_) =>
-                                setState(() => _focusMinutes = 25),
-                          ),
-                          ChoiceChip(
-                            label: const Text('45m'),
-                            selected: _focusMinutes == 45,
-                            onSelected: (_) =>
-                                setState(() => _focusMinutes = 45),
-                          ),
-                          ChoiceChip(
-                            label: const Text('60m'),
-                            selected: _focusMinutes == 60,
-                            onSelected: (_) =>
-                                setState(() => _focusMinutes = 60),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      ValueListenableBuilder<Duration>(
-                        valueListenable: FocusTimerService.instance.remaining,
-                        builder: (_, remaining, __) {
-                          final hasTime = remaining > Duration.zero;
-                          return Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  hasTime
-                                      ? 'Remaining: ${_formatDuration(remaining)}'
-                                      : 'No active focus session',
-                                  style: theme.textTheme.titleMedium,
+                child: InkWell(
+                  onTap: _reopenFocusDialog,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Focus Session Timer',
+                            style: theme.textTheme.titleLarge),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            ChoiceChip(
+                              label: const Text('25m'),
+                              selected: _focusMinutes == 25,
+                              onSelected: (_) =>
+                                  setState(() => _focusMinutes = 25),
+                            ),
+                            ChoiceChip(
+                              label: const Text('45m'),
+                              selected: _focusMinutes == 45,
+                              onSelected: (_) =>
+                                  setState(() => _focusMinutes = 45),
+                            ),
+                            ChoiceChip(
+                              label: const Text('60m'),
+                              selected: _focusMinutes == 60,
+                              onSelected: (_) =>
+                                  setState(() => _focusMinutes = 60),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        ValueListenableBuilder<Duration>(
+                          valueListenable: FocusTimerService.instance.remaining,
+                          builder: (_, remaining, __) {
+                            final hasTime = remaining > Duration.zero;
+                            return Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    hasTime
+                                        ? 'Remaining: ${_formatDuration(remaining)}'
+                                        : 'No active focus session',
+                                    style: theme.textTheme.titleMedium,
+                                  ),
                                 ),
-                              ),
-                              if (!hasTime)
-                                FilledButton(
-                                  onPressed: _startFocusTimer,
-                                  child: const Text('Start'),
-                                )
-                              else
-                                OutlinedButton(
-                                  onPressed: _stopFocusTimer,
-                                  child: const Text('Stop'),
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-                    ],
+                                if (!hasTime)
+                                  FilledButton(
+                                    onPressed: _startFocusTimer,
+                                    child: const Text('Start'),
+                                  )
+                                else
+                                  OutlinedButton(
+                                    onPressed: _stopFocusTimer,
+                                    child: const Text('Stop'),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -484,4 +497,179 @@ class _RevisionEntry {
   final String subject;
   final String task;
   final int minutes;
+}
+
+// ---------------------------------------------------------------------------
+// Focus Timer Dialog — shown as soon as the user taps Start.
+// Shows a live countdown and automatically switches to a congrats view when
+// the session is complete.
+// ---------------------------------------------------------------------------
+class _FocusTimerDialog extends StatefulWidget {
+  const _FocusTimerDialog({required this.minutes});
+
+  final int minutes;
+
+  @override
+  State<_FocusTimerDialog> createState() => _FocusTimerDialogState();
+}
+
+class _FocusTimerDialogState extends State<_FocusTimerDialog> {
+  bool _done = false;
+
+  @override
+  void initState() {
+    super.initState();
+    FocusTimerService.instance.completionEvents.addListener(_onComplete);
+    // If already done by the time dialog mounts (edge case), show congrats.
+    if (!FocusTimerService.instance.isRunning &&
+        FocusTimerService.instance.remaining.value == Duration.zero) {
+      _done = true;
+    }
+  }
+
+  @override
+  void dispose() {
+    FocusTimerService.instance.completionEvents.removeListener(_onComplete);
+    super.dispose();
+  }
+
+  void _onComplete() {
+    if (!mounted) return;
+    setState(() => _done = true);
+  }
+
+  static String _fmt(Duration d) {
+    final m = d.inMinutes.toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return PopScope(
+      canPop: false,
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        clipBehavior: Clip.hardEdge,
+        child: _done ? _buildCongrats(theme) : _buildTimer(theme),
+      ),
+    );
+  }
+
+  Widget _buildTimer(ThemeData theme) {
+    return Container(
+      color: theme.colorScheme.surface,
+      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 160,
+            height: 160,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: theme.colorScheme.primaryContainer,
+            ),
+            alignment: Alignment.center,
+            child: ValueListenableBuilder<Duration>(
+              valueListenable: FocusTimerService.instance.remaining,
+              builder: (_, remaining, __) {
+                return Text(
+                  _fmt(remaining),
+                  style: theme.textTheme.displayMedium?.copyWith(
+                    color: theme.colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.bold,
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            '${widget.minutes}-Minute Focus Session',
+            style: theme.textTheme.titleMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Lock in and stay focused. You\'ve got this!',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 28),
+          OutlinedButton.icon(
+            onPressed: () {
+              FocusTimerService.instance.stop();
+              Navigator.of(context).pop();
+            },
+            icon: const Icon(Icons.stop_circle_outlined),
+            label: const Text('Stop Session'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 46),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCongrats(ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: double.infinity,
+          color: theme.colorScheme.primary,
+          padding: const EdgeInsets.symmetric(vertical: 32),
+          child: Column(
+            children: [
+              const Icon(Icons.emoji_events_rounded,
+                  size: 72, color: Colors.amber),
+              const SizedBox(height: 12),
+              Text(
+                'Session Complete!',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${widget.minutes} minutes of deep work done!',
+                style:
+                    theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+          child: Text(
+            'Amazing work! You earned a proper break.\nStep away, hydrate, and come back stronger 💪',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyLarge,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+          child: FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.check_circle_outline),
+            label: const Text('Awesome!'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(double.infinity, 46),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
