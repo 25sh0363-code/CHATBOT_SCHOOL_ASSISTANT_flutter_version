@@ -78,6 +78,11 @@ class GoogleAuthResponse(BaseModel):
     name: str
 
 
+class BasicAuthRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: str = Field(default="", max_length=180)
+
+
 class CollabCreateRoomRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     creator_email: str = Field(min_length=3, max_length=180)
@@ -713,6 +718,31 @@ def collab_google_auth(payload: GoogleAuthRequest) -> GoogleAuthResponse:
 
     # MVP behavior: trust GoogleSignIn result from client and keep an in-memory identity map.
     # For production, verify payload.id_token server-side with Google token verification.
+    user_id = email
+    with COLLAB_LOCK:
+        COLLAB_USERS[user_id] = {
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+        }
+
+    return GoogleAuthResponse(user_id=user_id, email=email, name=name)
+
+
+@app.post("/collab/auth/basic", response_model=GoogleAuthResponse)
+def collab_basic_auth(payload: BasicAuthRequest) -> GoogleAuthResponse:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required.")
+
+    email = _sanitize_email(payload.email)
+    if not email:
+        guest_key = re.sub(r"[^a-z0-9]+", "", name.lower())[:24] or "guest"
+        email = f"{guest_key}_{str(uuid4())[:8]}@guest.local"
+
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email format.")
+
     user_id = email
     with COLLAB_LOCK:
         COLLAB_USERS[user_id] = {
