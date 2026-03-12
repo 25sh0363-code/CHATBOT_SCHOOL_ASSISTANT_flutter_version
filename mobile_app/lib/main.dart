@@ -67,78 +67,82 @@ class _SchoolAssistantAppState extends State<SchoolAssistantApp> {
   }
 
   void _handleFocusCompletion() {
-    final context = _navigatorKey.currentContext;
-    if (context == null) {
-      return;
-    }
+    // Defer to next frame so the dialog is never called mid-frame (e.g. from
+    // inside a Timer.periodic tick) which would cause it to silently fail.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _navigatorKey.currentContext;
+      if (context == null) {
+        return;
+      }
 
-    final theme = Theme.of(context);
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return Dialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          clipBehavior: Clip.hardEdge,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: double.infinity,
-                color: theme.colorScheme.primary,
-                padding: const EdgeInsets.symmetric(vertical: 28),
-                child: Column(
-                  children: [
-                    const Icon(
-                      Icons.emoji_events_rounded,
-                      size: 64,
-                      color: Colors.amber,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Focus Complete!',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
+      final theme = Theme.of(context);
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return Dialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            clipBehavior: Clip.hardEdge,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: double.infinity,
+                  color: theme.colorScheme.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 28),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.emoji_events_rounded,
+                        size: 64,
+                        color: Colors.amber,
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Great work. Time for a short break.',
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: Colors.white70),
-                    ),
-                  ],
+                      const SizedBox(height: 10),
+                      Text(
+                        'Focus Complete!',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Great work. Time for a short break.',
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: Colors.white70),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
-                child: Text(
-                  'You finished your focus session. Step away, hydrate, and come back strong.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyLarge,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+                  child: Text(
+                    'You finished your focus session. Step away, hydrate, and come back strong.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyLarge,
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
-                child: FilledButton.icon(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('Awesome!'),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 46),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('Awesome!'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 46),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+              ],
+            ),
+          );
+        },
+      );
+    });
   }
 
   @override
