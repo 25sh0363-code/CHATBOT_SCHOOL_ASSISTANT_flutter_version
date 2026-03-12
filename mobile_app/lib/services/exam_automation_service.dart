@@ -32,7 +32,9 @@ class ExamAutomationService {
   Future<void> syncReminders(List<ExamEvent> exams) async {
     for (final exam in exams) {
       final id = _reminderId(exam.id);
-      await NotificationService.instance.cancel(id);
+      try {
+        await NotificationService.instance.cancel(id);
+      } catch (_) {}
 
       final now = DateTime.now();
       final examDateOnly = DateTime(
@@ -46,14 +48,18 @@ class ExamAutomationService {
         continue;
       }
 
-      await NotificationService.instance.scheduleDailyExamReminder(
-        id: id,
-        title: 'Exam Reminder: ${exam.title}',
-        body:
-            'Important exam coming up on ${_formatDate(exam.examDate)}. Revise today.',
-        hour: _dailyReminderHour,
-        minute: _dailyReminderMinute,
-      );
+      try {
+        await NotificationService.instance.scheduleDailyExamReminder(
+          id: id,
+          title: 'Exam Reminder: ${exam.title}',
+          body:
+              'Important exam coming up on ${_formatDate(exam.examDate)}. Revise today.',
+          hour: _dailyReminderHour,
+          minute: _dailyReminderMinute,
+        );
+      } catch (_) {
+        // Notification scheduling failed (permission issue); exam is still saved.
+      }
     }
   }
 

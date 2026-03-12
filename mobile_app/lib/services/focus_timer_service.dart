@@ -61,15 +61,21 @@ class FocusTimerService {
     remaining.value = duration;
     await _storeService?.saveFocusTimerEndsAt(_endAt);
 
-    await NotificationService.instance.scheduleOneTime(
-      id: _focusCompleteNotificationId,
-      title: 'Focus Session Complete',
-      body: 'Great work. Time for a short break.',
-      at: _endAt!,
-      focusChannel: true,
-    );
-
+    // Start the ticker first so countdown always works, even if notification
+    // scheduling fails (e.g. exact-alarm permission denied).
     _startTicker();
+
+    try {
+      await NotificationService.instance.scheduleOneTime(
+        id: _focusCompleteNotificationId,
+        title: 'Focus Session Complete',
+        body: 'Great work. Time for a short break.',
+        at: _endAt!,
+        focusChannel: true,
+      );
+    } catch (_) {
+      // Notification failed (permission issue); timer countdown continues.
+    }
   }
 
   void _startTicker() {
@@ -84,8 +90,9 @@ class FocusTimerService {
         NotificationService.instance.cancel(_focusCompleteNotificationId);
         NotificationService.instance.showNow(
           id: _focusCompleteNotificationId,
-          title: 'Focus Session Complete',
-          body: 'Great work. Time for a short break.',
+          title: 'Focus Session Complete ⏱',
+          body: 'Great work! You stayed focused. Time for a short break.',
+          focusPopup: true,
         );
         _storeService?.saveFocusTimerEndsAt(null);
         remaining.value = Duration.zero;

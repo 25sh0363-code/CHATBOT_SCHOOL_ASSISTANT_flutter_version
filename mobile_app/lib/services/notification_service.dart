@@ -70,13 +70,18 @@ class NotificationService {
     required int id,
     required String title,
     required String body,
+    bool focusPopup = false,
   }) async {
     await initialize();
     await _plugin.show(
       id,
       title,
       body,
-      _details(channelId: _focusChannelId, channelName: _focusChannelName),
+      _details(
+        channelId: _focusChannelId,
+        channelName: _focusChannelName,
+        focusPopup: focusPopup,
+      ),
     );
   }
 

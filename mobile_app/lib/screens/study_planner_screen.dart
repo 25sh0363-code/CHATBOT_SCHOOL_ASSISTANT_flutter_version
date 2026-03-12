@@ -42,14 +42,23 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
   }
 
   Future<void> _load() async {
-    final exams = await _examService.loadCleanedAndSynced();
-    if (!mounted) {
-      return;
+    try {
+      final exams = await _examService.loadCleanedAndSynced();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _exams = exams;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+      });
     }
-    setState(() {
-      _exams = exams;
-      _loading = false;
-    });
   }
 
   Future<void> _addExam() async {
@@ -184,8 +193,73 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
     if (!mounted || !ended) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Focus session complete. Great work.')),
+    _showCompletionDialog();
+  }
+
+  void _showCompletionDialog() {
+    final theme = Theme.of(context);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          clipBehavior: Clip.hardEdge,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Trophy banner
+              Container(
+                width: double.infinity,
+                color: theme.colorScheme.primary,
+                padding: const EdgeInsets.symmetric(vertical: 28),
+                child: Column(
+                  children: [
+                    const Icon(Icons.emoji_events_rounded,
+                        size: 64, color: Colors.amber),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Focus Complete!',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$_focusMinutes minutes of deep work',
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+                child: Text(
+                  'Amazing work! You earned a break. Step away, hydrate, and come back stronger.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('Awesome!'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 46),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
