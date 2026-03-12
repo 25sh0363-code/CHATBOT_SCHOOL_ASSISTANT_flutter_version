@@ -25,19 +25,16 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
   int _planDays = 7;
 
   int _focusMinutes = 25;
-  Duration _lastRemaining = Duration.zero;
 
   @override
   void initState() {
     super.initState();
     _examService = ExamAutomationService(storeService: widget.storeService);
-    FocusTimerService.instance.remaining.addListener(_onTimerTick);
     _load();
   }
 
   @override
   void dispose() {
-    FocusTimerService.instance.remaining.removeListener(_onTimerTick);
     super.dispose();
   }
 
@@ -153,7 +150,9 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
 
     final next = [..._exams, newExam]
       ..sort((a, b) => a.examDate.compareTo(b.examDate));
-    await _examService.saveAndSync(next);
+    try {
+      await _examService.saveAndSync(next);
+    } catch (_) {}
 
     if (!mounted) {
       return;
@@ -163,104 +162,23 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
       _exams = next;
     });
 
-    await _openGoogleCalendarForExam(newExam);
+    try {
+      await _openGoogleCalendarForExam(newExam);
+    } catch (_) {}
   }
 
   Future<void> _openGoogleCalendarForExam(ExamEvent exam) async {
     final start = _calendarDateOnly(exam.examDate);
     final end = _calendarDateOnly(exam.examDate.add(const Duration(days: 1)));
-    final now = DateTime.now();
-    final until = _calendarUtcDateTime(
-      DateTime(now.year, now.month, now.day, 23, 59)
-          .add(const Duration(days: 365)),
-    );
 
     final url = Uri.parse(
       'https://calendar.google.com/calendar/render?action=TEMPLATE'
       '&text=${Uri.encodeComponent('Important Exam: ${exam.title}')}'
       '&dates=$start/$end'
-      '&details=${Uri.encodeComponent('Subject: ${exam.subject}. Daily reminder event.')}'
-      '&recur=${Uri.encodeComponent('RRULE:FREQ=DAILY;UNTIL=$until')}',
+      '&details=${Uri.encodeComponent('Subject: ${exam.subject}. One-time exam event.')}',
     );
 
     await launchUrl(url, mode: LaunchMode.externalApplication);
-  }
-
-  void _onTimerTick() {
-    final remaining = FocusTimerService.instance.remaining.value;
-    final ended = _lastRemaining > Duration.zero && remaining == Duration.zero;
-    _lastRemaining = remaining;
-    if (!mounted || !ended) {
-      return;
-    }
-    _showCompletionDialog();
-  }
-
-  void _showCompletionDialog() {
-    final theme = Theme.of(context);
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return Dialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          clipBehavior: Clip.hardEdge,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Trophy banner
-              Container(
-                width: double.infinity,
-                color: theme.colorScheme.primary,
-                padding: const EdgeInsets.symmetric(vertical: 28),
-                child: Column(
-                  children: [
-                    const Icon(Icons.emoji_events_rounded,
-                        size: 64, color: Colors.amber),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Focus Complete!',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$_focusMinutes minutes of deep work',
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: Colors.white70),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
-                child: Text(
-                  'Amazing work! You earned a break. Step away, hydrate, and come back stronger.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyLarge,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
-                child: FilledButton.icon(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('Awesome!'),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 46),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   Future<void> _startFocusTimer() async {
@@ -552,16 +470,6 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
     return '$year$month$day';
   }
 
-  static String _calendarUtcDateTime(DateTime value) {
-    final utc = value.toUtc();
-    final year = utc.year.toString().padLeft(4, '0');
-    final month = utc.month.toString().padLeft(2, '0');
-    final day = utc.day.toString().padLeft(2, '0');
-    final hour = utc.hour.toString().padLeft(2, '0');
-    final minute = utc.minute.toString().padLeft(2, '0');
-    final second = utc.second.toString().padLeft(2, '0');
-    return '$year$month${day}T$hour$minute${second}Z';
-  }
 }
 
 class _RevisionEntry {

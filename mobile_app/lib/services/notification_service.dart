@@ -51,17 +51,29 @@ class NotificationService {
 
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.requestNotificationsPermission();
-    await androidPlugin?.requestExactAlarmsPermission();
-    await androidPlugin?.requestFullScreenIntentPermission();
+    try {
+      await androidPlugin?.requestNotificationsPermission();
+    } catch (_) {}
+    try {
+      await androidPlugin?.requestExactAlarmsPermission();
+    } catch (_) {}
+    try {
+      await androidPlugin?.requestFullScreenIntentPermission();
+    } catch (_) {}
 
     final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
         IOSFlutterLocalNotificationsPlugin>();
-    await iosPlugin?.requestPermissions(alert: true, badge: true, sound: true);
+    try {
+      await iosPlugin?.requestPermissions(
+          alert: true, badge: true, sound: true);
+    } catch (_) {}
 
     final macPlugin = _plugin.resolvePlatformSpecificImplementation<
         MacOSFlutterLocalNotificationsPlugin>();
-    await macPlugin?.requestPermissions(alert: true, badge: true, sound: true);
+    try {
+      await macPlugin?.requestPermissions(
+          alert: true, badge: true, sound: true);
+    } catch (_) {}
 
     _initialized = true;
   }

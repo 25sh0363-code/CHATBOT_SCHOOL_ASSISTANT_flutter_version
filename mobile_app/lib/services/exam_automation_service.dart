@@ -19,14 +19,16 @@ class ExamAutomationService {
       await _storeService.saveExamEvents(cleaned);
     }
 
-    await syncReminders(cleaned);
+    // Sync notifications in background — don't block the screen load.
+    syncReminders(cleaned).ignore();
     return cleaned;
   }
 
   Future<void> saveAndSync(List<ExamEvent> exams) async {
     final cleaned = _removeCompletedExams(exams);
     await _storeService.saveExamEvents(cleaned);
-    await syncReminders(cleaned);
+    // Fire reminder sync in background — don't block the calling UI.
+    syncReminders(cleaned).ignore();
   }
 
   Future<void> syncReminders(List<ExamEvent> exams) async {

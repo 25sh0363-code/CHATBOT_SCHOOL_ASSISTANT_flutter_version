@@ -13,6 +13,7 @@ class FocusTimerService {
   static const int _focusCompleteNotificationId = 910001;
 
   final ValueNotifier<Duration> remaining = ValueNotifier(Duration.zero);
+  final ValueNotifier<int> completionEvents = ValueNotifier(0);
 
   LocalStoreService? _storeService;
   Timer? _ticker;
@@ -95,6 +96,7 @@ class FocusTimerService {
           focusPopup: true,
         );
         _storeService?.saveFocusTimerEndsAt(null);
+        completionEvents.value++;
         remaining.value = Duration.zero;
         _ticker?.cancel();
         _ticker = null;
@@ -111,6 +113,8 @@ class FocusTimerService {
     _endAt = null;
     remaining.value = Duration.zero;
     await _storeService?.saveFocusTimerEndsAt(null);
-    await NotificationService.instance.cancel(_focusCompleteNotificationId);
+    try {
+      await NotificationService.instance.cancel(_focusCompleteNotificationId);
+    } catch (_) {}
   }
 }
