@@ -1,19 +1,22 @@
-# Flutter Mobile Starter (APK Path)
+# SINOVATE Mobile App
 
-This folder is a starter Flutter app for turning School Assistant into a downloadable Android app.
+This folder contains the Flutter mobile client for SINOVATE.
 
-## Features included in starter
+## Main features
 
-- Google sign-in screen + guest mode
-- Home shell with 3 tabs: Chat, Tests, Calendar
-- Test add/result add flow with local persistence (`shared_preferences`)
-- Performance trend chart (`fl_chart`)
-- Calendar events (`table_calendar`)
-- One-time vector DB bootstrap service from zip URL
+- AI chat with retrieval-backed study context
+- Notes generation and markdown viewing
+- Tests tracking and performance trend charts
+- Timetable, tasks, homework, and calendar views
+- Study planner with important exams, revision planning, and daily exam countdown reminders
+- Google Calendar handoff for single exam events
+- Focus timer with a floating in-app countdown overlay and completion popup
+- Collaboration rooms with note/worksheet sharing and owner member controls
+- Local persistence via `shared_preferences`
 
 ## Setup
 
-1. Install Flutter SDK and Android Studio.
+1. Install Flutter SDK.
 2. Start backend API from the project root:
 
 ```bash
@@ -38,6 +41,29 @@ flutter build apk --release
 Release APK output:
 
 - `build/app/outputs/flutter-apk/app-release.apk`
+
+## Build iOS
+
+```bash
+flutter build ipa --release
+```
+
+Notes:
+
+- Xcode and CocoaPods must be installed and working.
+- A valid Apple signing team/certificate is required for signed IPA builds.
+
+## Exam reminders
+
+- Each important exam gets a daily reminder at 7:00 AM until the exam date.
+- Reminder messages change based on how close the exam is.
+- The in-app Google Calendar action creates a one-time exam event for the exam date.
+
+## Focus timer
+
+- Starting a focus session shows a floating timer card while the rest of the app stays usable.
+- The timer continues counting down while navigating across the app.
+- When the session ends, a congratulations popup appears.
 
 ## Google sign-in notes
 

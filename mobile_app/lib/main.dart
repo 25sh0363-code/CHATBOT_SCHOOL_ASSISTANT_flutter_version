@@ -154,12 +154,122 @@ class _SchoolAssistantAppState extends State<SchoolAssistantApp> {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: _themeMode,
+      builder: (context, child) {
+        return Stack(
+          children: [
+            if (child != null) child,
+            const _FocusTimerOverlay(),
+          ],
+        );
+      },
       home: _initializing
           ? const SinovateSplashScreen()
           : HomeScreen(
               isDarkMode: _themeMode == ThemeMode.dark,
               onToggleTheme: _toggleTheme,
             ),
+    );
+  }
+}
+
+class _FocusTimerOverlay extends StatelessWidget {
+  const _FocusTimerOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topRight,
+        child: ValueListenableBuilder<Duration>(
+          valueListenable: FocusTimerService.instance.remaining,
+          builder: (context, remaining, _) {
+            if (remaining <= Duration.zero) {
+              return const SizedBox.shrink();
+            }
+
+            final minutes = remaining.inMinutes.toString().padLeft(2, '0');
+            final seconds =
+                (remaining.inSeconds % 60).toString().padLeft(2, '0');
+
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: Material(
+                elevation: 10,
+                color: Colors.transparent,
+                child: Container(
+                  width: 172,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.timer_outlined,
+                            color: theme.colorScheme.primary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Focus Mode',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Center(
+                        child: Text(
+                          '$minutes:$seconds',
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Timer keeps running while you use the app.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            FocusTimerService.instance.stop();
+                          },
+                          icon: const Icon(Icons.stop_circle_outlined),
+                          label: const Text('Stop'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }
