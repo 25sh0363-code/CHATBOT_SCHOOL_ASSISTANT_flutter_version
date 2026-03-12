@@ -6,7 +6,7 @@ import tempfile
 import threading
 import urllib.request
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -126,6 +126,10 @@ app = FastAPI(title="School Assistant API", version="1.0.0")
 COLLAB_LOCK = threading.Lock()
 COLLAB_USERS: dict[str, dict[str, str]] = {}
 COLLAB_ROOMS: dict[str, dict[str, Any]] = {}
+COLLAB_MESSAGE_TTL_SECONDS = int(os.getenv("COLLAB_MESSAGE_TTL_SECONDS", str(24 * 60 * 60)))
+COLLAB_CLEANUP_INTERVAL_SECONDS = int(os.getenv("COLLAB_CLEANUP_INTERVAL_SECONDS", "60"))
+COLLAB_MAX_MESSAGES_PER_ROOM = int(os.getenv("COLLAB_MAX_MESSAGES_PER_ROOM", "600"))
+COLLAB_LAST_CLEANUP_TS = 0
 
 app.add_middleware(
     CORSMiddleware,
@@ -319,7 +323,11 @@ def build_conversation_messages(history: list[dict[str, str]], system_prompt: st
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _now_ts() -> int:
+    return int(datetime.now(timezone.utc).timestamp())
 
 
 def _sanitize_email(value: str) -> str:
@@ -341,9 +349,46 @@ def _room_public_payload(room: dict[str, Any]) -> dict[str, Any]:
 
 
 def _assert_member(room: dict[str, Any], user_email: str) -> None:
-    member_emails = {m.get("email", "") for m in room["members"]}
+    member_emails = room.get("member_emails")
+    if not isinstance(member_emails, set):
+        member_emails = {
+            _sanitize_email(m.get("email", ""))
+            for m in room.get("members", [])
+            if m.get("email", "")
+        }
+        room["member_emails"] = member_emails
     if user_email not in member_emails:
         raise HTTPException(status_code=403, detail="Join this collab room first.")
+
+
+def _message_ts(message: dict[str, Any]) -> int:
+    raw_ts = message.get("created_at_ts")
+    if isinstance(raw_ts, int):
+        return raw_ts
+
+    raw_iso = str(message.get("created_at", ""))
+    if raw_iso.endswith("Z"):
+        raw_iso = raw_iso.replace("Z", "+00:00")
+    try:
+        return int(datetime.fromisoformat(raw_iso).timestamp())
+    except ValueError:
+        return 0
+
+
+def _cleanup_collab_state_if_due() -> None:
+    global COLLAB_LAST_CLEANUP_TS
+    now_ts = _now_ts()
+    if now_ts - COLLAB_LAST_CLEANUP_TS < COLLAB_CLEANUP_INTERVAL_SECONDS:
+        return
+
+    cutoff_ts = now_ts - COLLAB_MESSAGE_TTL_SECONDS
+    for room in COLLAB_ROOMS.values():
+        messages = room.get("messages", [])
+        if not messages:
+            continue
+        room["messages"] = [m for m in messages if _message_ts(m) >= cutoff_ts]
+
+    COLLAB_LAST_CLEANUP_TS = now_ts
 
 
 def _add_room_message(
@@ -354,6 +399,7 @@ def _add_room_message(
     text: str,
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    now_ts = _now_ts()
     message = {
         "id": str(uuid4()),
         "sender_email": user_email,
@@ -362,10 +408,11 @@ def _add_room_message(
         "text": text,
         "payload": payload or {},
         "created_at": _now_iso(),
+        "created_at_ts": now_ts,
     }
     room["messages"].append(message)
-    if len(room["messages"]) > 600:
-        room["messages"] = room["messages"][-600:]
+    if len(room["messages"]) > COLLAB_MAX_MESSAGES_PER_ROOM:
+        room["messages"] = room["messages"][-COLLAB_MAX_MESSAGES_PER_ROOM:]
     return message
 
 
@@ -681,6 +728,7 @@ def collab_google_auth(payload: GoogleAuthRequest) -> GoogleAuthResponse:
 def collab_create_room(payload: CollabCreateRoomRequest) -> dict[str, Any]:
     creator_email = _sanitize_email(payload.creator_email)
     room_id = str(uuid4())[:8]
+    created_ts = _now_ts()
     room = {
         "id": room_id,
         "name": payload.name.strip(),
@@ -688,17 +736,20 @@ def collab_create_room(payload: CollabCreateRoomRequest) -> dict[str, Any]:
         "owner_name": payload.creator_name.strip(),
         "is_public": payload.is_public,
         "created_at": _now_iso(),
+        "created_at_ts": created_ts,
         "members": [
             {
                 "email": creator_email,
                 "name": payload.creator_name.strip(),
             }
         ],
+        "member_emails": {creator_email},
         "messages": [],
         "meet_link": "",
     }
 
     with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
         COLLAB_ROOMS[room_id] = room
         _add_room_message(
             room,
@@ -715,13 +766,21 @@ def collab_create_room(payload: CollabCreateRoomRequest) -> dict[str, Any]:
 def collab_list_rooms(user_email: str = "") -> dict[str, Any]:
     email = _sanitize_email(user_email)
     with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
         rooms = []
         for room in COLLAB_ROOMS.values():
-            member_emails = {m.get("email", "") for m in room["members"]}
+            member_emails = room.get("member_emails")
+            if not isinstance(member_emails, set):
+                member_emails = {
+                    _sanitize_email(m.get("email", ""))
+                    for m in room.get("members", [])
+                    if m.get("email", "")
+                }
+                room["member_emails"] = member_emails
             if room["is_public"] or (email and email in member_emails):
                 rooms.append(_room_public_payload(room))
 
-    rooms.sort(key=lambda r: r["created_at"], reverse=True)
+    rooms.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     return {"rooms": rooms}
 
 
@@ -731,6 +790,7 @@ def collab_join_room(room_id: str, payload: CollabJoinRoomRequest) -> dict[str, 
     user_name = payload.user_name.strip()
 
     with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
         room = COLLAB_ROOMS.get(room_id)
         if room is None:
             raise HTTPException(status_code=404, detail="Collab room not found.")
@@ -741,6 +801,7 @@ def collab_join_room(room_id: str, payload: CollabJoinRoomRequest) -> dict[str, 
         )
         if existing is None:
             room["members"].append({"email": user_email, "name": user_name})
+            room.setdefault("member_emails", set()).add(user_email)
             _add_room_message(
                 room,
                 user_email,
@@ -756,6 +817,7 @@ def collab_join_room(room_id: str, payload: CollabJoinRoomRequest) -> dict[str, 
 def collab_get_room(room_id: str, user_email: str = "") -> dict[str, Any]:
     email = _sanitize_email(user_email)
     with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
         room = COLLAB_ROOMS.get(room_id)
         if room is None:
             raise HTTPException(status_code=404, detail="Collab room not found.")
@@ -773,6 +835,7 @@ def collab_get_room(room_id: str, user_email: str = "") -> dict[str, Any]:
 def collab_get_messages(room_id: str, user_email: str = "") -> dict[str, Any]:
     email = _sanitize_email(user_email)
     with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
         room = COLLAB_ROOMS.get(room_id)
         if room is None:
             raise HTTPException(status_code=404, detail="Collab room not found.")
@@ -792,6 +855,7 @@ def collab_send_message(room_id: str, payload: CollabMessageRequest) -> dict[str
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
     with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
         room = COLLAB_ROOMS.get(room_id)
         if room is None:
             raise HTTPException(status_code=404, detail="Collab room not found.")
@@ -815,6 +879,7 @@ def collab_share_note(room_id: str, payload: CollabShareNoteRequest) -> dict[str
     user_name = payload.user_name.strip()
 
     with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
         room = COLLAB_ROOMS.get(room_id)
         if room is None:
             raise HTTPException(status_code=404, detail="Collab room not found.")
@@ -844,6 +909,7 @@ def collab_share_worksheet(room_id: str, payload: CollabShareWorksheetRequest) -
         raise HTTPException(status_code=400, detail="Worksheet has no questions.")
 
     with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
         room = COLLAB_ROOMS.get(room_id)
         if room is None:
             raise HTTPException(status_code=404, detail="Collab room not found.")
@@ -873,6 +939,7 @@ def collab_create_or_update_meet(room_id: str, payload: CollabMeetRequest) -> di
     link = payload.meet_link.strip() or "https://meet.google.com/new"
 
     with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
         room = COLLAB_ROOMS.get(room_id)
         if room is None:
             raise HTTPException(status_code=404, detail="Collab room not found.")
