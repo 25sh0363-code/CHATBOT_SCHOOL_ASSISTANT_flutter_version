@@ -3,11 +3,14 @@ import base64
 import io
 import re
 import tempfile
+import threading
 import urllib.request
 import zipfile
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -63,8 +66,66 @@ class NotesGenerationResponse(BaseModel):
     attachments_processed: int
 
 
+class GoogleAuthRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=180)
+    name: str = Field(min_length=1, max_length=120)
+    id_token: str | None = None
+
+
+class GoogleAuthResponse(BaseModel):
+    user_id: str
+    email: str
+    name: str
+
+
+class CollabCreateRoomRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    creator_email: str = Field(min_length=3, max_length=180)
+    creator_name: str = Field(min_length=1, max_length=120)
+    is_public: bool = True
+
+
+class CollabJoinRoomRequest(BaseModel):
+    user_email: str = Field(min_length=3, max_length=180)
+    user_name: str = Field(min_length=1, max_length=120)
+
+
+class CollabMessageRequest(BaseModel):
+    user_email: str = Field(min_length=3, max_length=180)
+    user_name: str = Field(min_length=1, max_length=120)
+    text: str = Field(default="", max_length=5000)
+    message_type: str = Field(default="text", max_length=50)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class CollabShareNoteRequest(BaseModel):
+    user_email: str = Field(min_length=3, max_length=180)
+    user_name: str = Field(min_length=1, max_length=120)
+    topic: str = Field(min_length=1, max_length=240)
+    content: str = Field(min_length=1, max_length=12000)
+
+
+class CollabShareWorksheetRequest(BaseModel):
+    user_email: str = Field(min_length=3, max_length=180)
+    user_name: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=240)
+    subject: str = Field(min_length=1, max_length=120)
+    topic: str = Field(min_length=1, max_length=120)
+    questions: list[str] = Field(default_factory=list)
+
+
+class CollabMeetRequest(BaseModel):
+    user_email: str = Field(min_length=3, max_length=180)
+    user_name: str = Field(min_length=1, max_length=120)
+    meet_link: str = Field(default="", max_length=500)
+
+
 load_dotenv()
 app = FastAPI(title="School Assistant API", version="1.0.0")
+
+COLLAB_LOCK = threading.Lock()
+COLLAB_USERS: dict[str, dict[str, str]] = {}
+COLLAB_ROOMS: dict[str, dict[str, Any]] = {}
 
 app.add_middleware(
     CORSMiddleware,
@@ -255,6 +316,57 @@ def build_conversation_messages(history: list[dict[str, str]], system_prompt: st
     # Add current question
     messages.append(HumanMessage(content=user_message))
     return messages
+
+
+def _now_iso() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def _sanitize_email(value: str) -> str:
+    return value.strip().lower()
+
+
+def _room_public_payload(room: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": room["id"],
+        "name": room["name"],
+        "owner_email": room["owner_email"],
+        "owner_name": room["owner_name"],
+        "is_public": room["is_public"],
+        "created_at": room["created_at"],
+        "member_count": len(room["members"]),
+        "members": room["members"],
+        "meet_link": room.get("meet_link", ""),
+    }
+
+
+def _assert_member(room: dict[str, Any], user_email: str) -> None:
+    member_emails = {m.get("email", "") for m in room["members"]}
+    if user_email not in member_emails:
+        raise HTTPException(status_code=403, detail="Join this collab room first.")
+
+
+def _add_room_message(
+    room: dict[str, Any],
+    user_email: str,
+    user_name: str,
+    message_type: str,
+    text: str,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    message = {
+        "id": str(uuid4()),
+        "sender_email": user_email,
+        "sender_name": user_name,
+        "message_type": message_type,
+        "text": text,
+        "payload": payload or {},
+        "created_at": _now_iso(),
+    }
+    room["messages"].append(message)
+    if len(room["messages"]) > 600:
+        room["messages"] = room["messages"][-600:]
+    return message
 
 
 def answer_question(question: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
@@ -543,6 +655,240 @@ def notes_generate(payload: NotesGenerationRequest) -> NotesGenerationResponse:
         raise HTTPException(status_code=400, detail=f"Invalid attachment payload: {exc}") from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Notes generation failed: {exc}") from exc
+
+
+@app.post("/collab/auth/google", response_model=GoogleAuthResponse)
+def collab_google_auth(payload: GoogleAuthRequest) -> GoogleAuthResponse:
+    email = _sanitize_email(payload.email)
+    name = payload.name.strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid Google account email.")
+
+    # MVP behavior: trust GoogleSignIn result from client and keep an in-memory identity map.
+    # For production, verify payload.id_token server-side with Google token verification.
+    user_id = email
+    with COLLAB_LOCK:
+        COLLAB_USERS[user_id] = {
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+        }
+
+    return GoogleAuthResponse(user_id=user_id, email=email, name=name)
+
+
+@app.post("/collab/rooms")
+def collab_create_room(payload: CollabCreateRoomRequest) -> dict[str, Any]:
+    creator_email = _sanitize_email(payload.creator_email)
+    room_id = str(uuid4())[:8]
+    room = {
+        "id": room_id,
+        "name": payload.name.strip(),
+        "owner_email": creator_email,
+        "owner_name": payload.creator_name.strip(),
+        "is_public": payload.is_public,
+        "created_at": _now_iso(),
+        "members": [
+            {
+                "email": creator_email,
+                "name": payload.creator_name.strip(),
+            }
+        ],
+        "messages": [],
+        "meet_link": "",
+    }
+
+    with COLLAB_LOCK:
+        COLLAB_ROOMS[room_id] = room
+        _add_room_message(
+            room,
+            creator_email,
+            payload.creator_name.strip(),
+            "system",
+            f"{payload.creator_name.strip()} created this collab room.",
+        )
+
+    return {"room": _room_public_payload(room)}
+
+
+@app.get("/collab/rooms")
+def collab_list_rooms(user_email: str = "") -> dict[str, Any]:
+    email = _sanitize_email(user_email)
+    with COLLAB_LOCK:
+        rooms = []
+        for room in COLLAB_ROOMS.values():
+            member_emails = {m.get("email", "") for m in room["members"]}
+            if room["is_public"] or (email and email in member_emails):
+                rooms.append(_room_public_payload(room))
+
+    rooms.sort(key=lambda r: r["created_at"], reverse=True)
+    return {"rooms": rooms}
+
+
+@app.post("/collab/rooms/{room_id}/join")
+def collab_join_room(room_id: str, payload: CollabJoinRoomRequest) -> dict[str, Any]:
+    user_email = _sanitize_email(payload.user_email)
+    user_name = payload.user_name.strip()
+
+    with COLLAB_LOCK:
+        room = COLLAB_ROOMS.get(room_id)
+        if room is None:
+            raise HTTPException(status_code=404, detail="Collab room not found.")
+
+        existing = next(
+            (m for m in room["members"] if _sanitize_email(m.get("email", "")) == user_email),
+            None,
+        )
+        if existing is None:
+            room["members"].append({"email": user_email, "name": user_name})
+            _add_room_message(
+                room,
+                user_email,
+                user_name,
+                "system",
+                f"{user_name} joined the collab.",
+            )
+
+    return {"room": _room_public_payload(room)}
+
+
+@app.get("/collab/rooms/{room_id}")
+def collab_get_room(room_id: str, user_email: str = "") -> dict[str, Any]:
+    email = _sanitize_email(user_email)
+    with COLLAB_LOCK:
+        room = COLLAB_ROOMS.get(room_id)
+        if room is None:
+            raise HTTPException(status_code=404, detail="Collab room not found.")
+
+        if not room["is_public"]:
+            _assert_member(room, email)
+
+        return {
+            "room": _room_public_payload(room),
+            "messages": room["messages"][-100:],
+        }
+
+
+@app.get("/collab/rooms/{room_id}/messages")
+def collab_get_messages(room_id: str, user_email: str = "") -> dict[str, Any]:
+    email = _sanitize_email(user_email)
+    with COLLAB_LOCK:
+        room = COLLAB_ROOMS.get(room_id)
+        if room is None:
+            raise HTTPException(status_code=404, detail="Collab room not found.")
+
+        if not room["is_public"]:
+            _assert_member(room, email)
+
+        return {"messages": room["messages"][-250:]}
+
+
+@app.post("/collab/rooms/{room_id}/messages")
+def collab_send_message(room_id: str, payload: CollabMessageRequest) -> dict[str, Any]:
+    user_email = _sanitize_email(payload.user_email)
+    user_name = payload.user_name.strip()
+    text = payload.text.strip()
+    if payload.message_type == "text" and not text:
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+
+    with COLLAB_LOCK:
+        room = COLLAB_ROOMS.get(room_id)
+        if room is None:
+            raise HTTPException(status_code=404, detail="Collab room not found.")
+        _assert_member(room, user_email)
+
+        message = _add_room_message(
+            room,
+            user_email,
+            user_name,
+            payload.message_type,
+            text,
+            payload.payload,
+        )
+
+    return {"message": message}
+
+
+@app.post("/collab/rooms/{room_id}/share-note")
+def collab_share_note(room_id: str, payload: CollabShareNoteRequest) -> dict[str, Any]:
+    user_email = _sanitize_email(payload.user_email)
+    user_name = payload.user_name.strip()
+
+    with COLLAB_LOCK:
+        room = COLLAB_ROOMS.get(room_id)
+        if room is None:
+            raise HTTPException(status_code=404, detail="Collab room not found.")
+        _assert_member(room, user_email)
+
+        message = _add_room_message(
+            room,
+            user_email,
+            user_name,
+            "note",
+            f"Shared note: {payload.topic.strip()}",
+            {
+                "topic": payload.topic.strip(),
+                "content": payload.content.strip(),
+            },
+        )
+
+    return {"message": message}
+
+
+@app.post("/collab/rooms/{room_id}/share-worksheet")
+def collab_share_worksheet(room_id: str, payload: CollabShareWorksheetRequest) -> dict[str, Any]:
+    user_email = _sanitize_email(payload.user_email)
+    user_name = payload.user_name.strip()
+    questions = [q.strip() for q in payload.questions if q.strip()]
+    if not questions:
+        raise HTTPException(status_code=400, detail="Worksheet has no questions.")
+
+    with COLLAB_LOCK:
+        room = COLLAB_ROOMS.get(room_id)
+        if room is None:
+            raise HTTPException(status_code=404, detail="Collab room not found.")
+        _assert_member(room, user_email)
+
+        message = _add_room_message(
+            room,
+            user_email,
+            user_name,
+            "worksheet",
+            f"Shared worksheet: {payload.title.strip()}",
+            {
+                "title": payload.title.strip(),
+                "subject": payload.subject.strip(),
+                "topic": payload.topic.strip(),
+                "questions": questions,
+            },
+        )
+
+    return {"message": message}
+
+
+@app.post("/collab/rooms/{room_id}/meet")
+def collab_create_or_update_meet(room_id: str, payload: CollabMeetRequest) -> dict[str, Any]:
+    user_email = _sanitize_email(payload.user_email)
+    user_name = payload.user_name.strip()
+    link = payload.meet_link.strip() or "https://meet.google.com/new"
+
+    with COLLAB_LOCK:
+        room = COLLAB_ROOMS.get(room_id)
+        if room is None:
+            raise HTTPException(status_code=404, detail="Collab room not found.")
+        _assert_member(room, user_email)
+
+        room["meet_link"] = link
+        message = _add_room_message(
+            room,
+            user_email,
+            user_name,
+            "meet",
+            f"Updated Google Meet link for this collab.",
+            {"meet_link": link},
+        )
+
+    return {"room": _room_public_payload(room), "message": message}
 
 
 @app.on_event("startup")
