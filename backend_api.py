@@ -39,7 +39,7 @@ MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "2"))
 MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "300"))
 
 
-CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "450"))
+CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "900"))
 NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1100"))
 
 
@@ -215,32 +215,26 @@ def ensure_local_vectorstore() -> None:
 
 
 def make_math_readable(text: str) -> str:
-    """Format math and ensure markdown compatibility."""
     if not text:
         return text
 
-    # Convert common LaTeX delimiters to markdown-friendly sections.
-    text = text.replace("\\[", "\n\n**Equation:**\n").replace("\\]", "\n")
-    text = text.replace("\\(", "").replace("\\)", "")
-    text = text.replace("$$", "")
-    
-    # Simplify common LaTeX commands for readability
-    text = re.sub(r"\\sqrt\{([^}]*)\}", r"√(\1)", text)
+    # Convert LaTeX fractions
     text = re.sub(r"\\frac\{([^}]*)\}\{([^}]*)\}", r"(\1)/(\2)", text)
-    
-    # Replace Greek letters/operators with Unicode symbols.
+
+    # Convert square roots
+    text = re.sub(r"\\sqrt\{([^}]*)\}", r"√(\1)", text)
+
+    # Greek letters and math symbols
     replacements = {
         "\\theta": "θ",
         "\\alpha": "α",
         "\\beta": "β",
         "\\gamma": "γ",
         "\\Delta": "Δ",
-        "\\delta": "δ",
         "\\pi": "π",
         "\\mu": "μ",
         "\\sigma": "σ",
         "\\omega": "ω",
-        "\\Omega": "Ω",
         "\\lambda": "λ",
         "\\times": "×",
         "\\cdot": "·",
@@ -249,17 +243,10 @@ def make_math_readable(text: str) -> str:
         "\\leq": "≤",
         "\\geq": "≥",
         "\\neq": "≠",
-        "\\rightarrow": "→",
         "\\infty": "∞",
     }
     for src, dst in replacements.items():
         text = text.replace(src, dst)
-
-    # Light cleanup for frequent TeX wrappers.
-    text = text.replace("\\left", "").replace("\\right", "")
-    text = text.replace("{", "").replace("}", "")
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"\n\s+", "\n", text)
 
     return text.strip()
 
@@ -509,19 +496,31 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
         )
 
     system_prompt = (
-        "You are an expert NCERT Class 11–12 chemistry and physics tutor.\n"
-        "Use retrieved NCERT context first.\n"
-        "Always show step-by-step reasoning for physics derivations and numerical problems.\n"
-        "Use clear exam-ready explanations with formulas and steps.\n"
-        "Use markdown formatting with headings, lists, and tables.\n"
-        "Do NOT use any HTML tags (such as <br>, <b>, <i>, etc). Only use markdown for formatting.\n"
-        "Explain concepts simply for students.\n"
-        f"Retrieved Context:\n{context if used_context else 'No context retrieved.'}\n"
+        "You are an expert NCERT Class 11–12 physics and chemistry tutor.\n\n"
+        "Formatting rules:\n"
+        "- Use **Markdown formatting**\n"
+        "- Use headings (##, ###)\n"
+        "- Use bullet lists\n"
+        "- Show formulas clearly\n"
+        "- Use emojis sparingly for clarity\n\n"
+        "Math rules:\n"
+        "- Write formulas clearly\n"
+        "- Use symbols like θ α β Δ π √ × ± ≤ ≥\n"
+        "- Show step-by-step derivations\n\n"
+        "Teaching style:\n"
+        "- Explain simply like a good teacher\n"
+        "- Break answers into sections\n"
+        "- Use examples when useful\n\n"
+        "Use emojis when helpful:\n"
+        "📘 concept\n🧠 idea\n⚡ formula\n📌 important\n\n"
+        f"Retrieved Context:\n{context if used_context else 'No context retrieved.'}"
     )
 
+    # Add a formatting hint to the question
+    question = question + "\n\nFormat the answer clearly for a student."
     messages = build_conversation_messages(history, system_prompt, question)
 
-    llm = ChatOpenAI(model_name=CHAT_MODEL, temperature=0, max_tokens=CHAT_MAX_TOKENS)
+    llm = ChatOpenAI(model_name=CHAT_MODEL, temperature=0.1, max_tokens=CHAT_MAX_TOKENS)
     result = llm.invoke(messages)
 
     answer = make_math_readable(str(result.content).strip())
