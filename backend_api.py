@@ -514,6 +514,7 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
         "Always show step-by-step reasoning for physics derivations and numerical problems.\n"
         "Use clear exam-ready explanations with formulas and steps.\n"
         "Use markdown formatting with headings, lists, and tables.\n"
+        "Do NOT use any HTML tags (such as <br>, <b>, <i>, etc). Only use markdown for formatting.\n"
         "Explain concepts simply for students.\n"
         f"Retrieved Context:\n{context if used_context else 'No context retrieved.'}\n"
     )
@@ -525,6 +526,8 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
 
     answer = make_math_readable(str(result.content).strip())
     answer = strip_source_citations(answer)
+    # Replace HTML <br> tags with newlines for markdown compatibility
+    answer = answer.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
 
     return ChatResponse(
         answer=answer,
@@ -603,6 +606,8 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
 
     answer = make_math_readable(str(ai_message.content).strip())
     answer = strip_source_citations(answer)
+    # Replace HTML <br> tags with newlines for markdown compatibility
+    answer = answer.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
 
     return ChatResponse(
         answer=answer,
