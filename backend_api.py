@@ -22,24 +22,23 @@ from pydantic import BaseModel, Field
 from PyPDF2 import PdfReader
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-5-mini")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4o-mini")
 NOTES_MODEL = os.getenv("NOTES_MODEL", "gpt-4.1-mini")
 VISION_CHAT_MODEL = os.getenv("VISION_CHAT_MODEL", "gpt-4.1-mini")
 VECTORSTORE_DIR = Path("vectorstore/faiss_index")
 VECTORSTORE_INDEX_PATH = VECTORSTORE_DIR / "index.faiss"
 
-# Retrieval sizing controls how much context is fed into the model.
-# Lowered for token savings (see recommendations)
+
 RETRIEVAL_CANDIDATE_K = int(os.getenv("RETRIEVAL_CANDIDATE_K", "6"))
 RETRIEVAL_FINAL_K = int(os.getenv("RETRIEVAL_FINAL_K", "3"))
 RETRIEVAL_CHARS_PER_CHUNK = int(os.getenv("RETRIEVAL_CHARS_PER_CHUNK", "500"))
 RETRIEVAL_MAX_CONTEXT_CHARS = int(os.getenv("RETRIEVAL_MAX_CONTEXT_CHARS", "1500"))
 
-# Conversation history limits (lowered for token savings)
+
 MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "2"))
 MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "300"))
 
-# Token limits (lowered for cost savings)
+
 CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "450"))
 NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1100"))
 
@@ -482,18 +481,21 @@ def _add_room_message(
     return message
 
 
+
+# Move the cache outside the function so it persists across requests
+@lru_cache(maxsize=500)
+def cached_retrieval(question: str):
+    return get_retrieved_context(question)
+
 def answer_question(question: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
     if history is None:
         history = []
 
     history = trim_history(history)
-    
-    # Cache retrieval results for repeated questions
-    from functools import lru_cache
-    @lru_cache(maxsize=500)
-    def cached_retrieval(q):
-        return get_retrieved_context(q)
-    context, chunk_count = cached_retrieval(question)
+
+    # Normalize the question for consistent retrieval
+    normalized_question = question.lower().strip()
+    context, chunk_count = cached_retrieval(normalized_question)
     # Limit context before sending to model (token savings)
     context = context[:1200]
     used_context = bool(context.strip())
@@ -509,6 +511,7 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
     system_prompt = (
         "You are an expert NCERT Class 11–12 chemistry and physics tutor.\n"
         "Use retrieved NCERT context first.\n"
+        "Always show step-by-step reasoning for physics derivations and numerical problems.\n"
         "Use clear exam-ready explanations with formulas and steps.\n"
         "Use markdown formatting with headings, lists, and tables.\n"
         "Explain concepts simply for students.\n"
