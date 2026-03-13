@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:flutter/foundation.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -19,6 +19,13 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
+  bool _notificationsEnabled = false;
+
+  bool get notificationsEnabled {
+    // ignore: avoid_print
+    debugPrint('[NotificationService] notificationsEnabled getter: $_notificationsEnabled');
+    return _notificationsEnabled;
+  }
 
   Future<void> initialize() async {
     if (_initialized) {
@@ -27,8 +34,7 @@ class NotificationService {
 
     tz.initializeTimeZones();
     try {
-      final timezoneInfo = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
+      tz.setLocalLocation(tz.local);
     } catch (_) {
       tz.setLocalLocation(tz.getLocation('UTC'));
     }
@@ -48,16 +54,46 @@ class NotificationService {
     );
 
     await _plugin.initialize(settings);
-
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
     try {
-      await androidPlugin?.requestNotificationsPermission();
-    } catch (_) {}
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _examChannelId,
+          _examChannelName,
+          description: 'Important exam reminder alerts',
+          importance: Importance.max,
+        ),
+      );
+      await androidPlugin?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _focusChannelId,
+          _focusChannelName,
+          description: 'Full-screen focus session alerts',
+          importance: Importance.max,
+        ),
+      );
+      debugPrint('[NotificationService] Notification channels created');
+      final enabled = await androidPlugin?.areNotificationsEnabled();
+      final granted = await androidPlugin?.requestNotificationsPermission();
+      if (enabled == true || granted == true) {
+        _notificationsEnabled = true;
+      } else if (enabled == null && granted == null) {
+        // Fallback: if both are unavailable, assume enabled
+        _notificationsEnabled = true;
+      } else {
+        _notificationsEnabled = false;
+      }
+    } catch (e) {
+      debugPrint('[NotificationService] Failed to create channels or check permissions: $e');
+      // Fallback: if error, assume enabled
+      _notificationsEnabled = true;
+    }
     try {
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       await androidPlugin?.requestExactAlarmsPermission();
     } catch (_) {}
     try {
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       await androidPlugin?.requestFullScreenIntentPermission();
     } catch (_) {}
 
@@ -85,6 +121,10 @@ class NotificationService {
     bool focusPopup = false,
   }) async {
     await initialize();
+    if (!_notificationsEnabled) {
+        debugPrint('[NotificationService] Notifications not enabled, skipping showNow');
+      return;
+    }
     await _plugin.show(
       id,
       title,
@@ -95,6 +135,7 @@ class NotificationService {
         focusPopup: focusPopup,
       ),
     );
+      debugPrint('[NotificationService] showNow called: id=$id, title=$title, body=$body');
   }
 
   Future<void> scheduleOneTime({
@@ -105,52 +146,29 @@ class NotificationService {
     bool focusChannel = false,
   }) async {
     await initialize();
-    final target = tz.TZDateTime.from(at, tz.local);
-    await _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      target,
-      _details(
-        channelId: focusChannel ? _focusChannelId : _examChannelId,
-        channelName: focusChannel ? _focusChannelName : _examChannelName,
-        focusPopup: focusChannel,
-      ),
-      androidScheduleMode: focusChannel
-          ? AndroidScheduleMode.exactAllowWhileIdle
-          : AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: null,
-    );
-  }
-
-  Future<void> scheduleDailyExamReminder({
-    required int id,
-    required String title,
-    required String body,
-    required int hour,
-    required int minute,
-  }) async {
-    await initialize();
-    final now = tz.TZDateTime.now(tz.local);
-    var next =
-        tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
-    if (next.isBefore(now)) {
-      next = next.add(const Duration(days: 1));
+    debugPrint('[NotificationService] scheduleOneTime ENTRY: id=$id, title=$title, at=$at');
+    debugPrint('[NotificationService] scheduleOneTime: Calling zonedSchedule');
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        tz.TZDateTime.from(at, tz.local),
+        _details(
+          channelId: focusChannel ? _focusChannelId : _examChannelId,
+          channelName: focusChannel ? _focusChannelName : _examChannelName,
+          focusPopup: focusChannel,
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: null,
+      );
+      debugPrint('[NotificationService] scheduleOneTime SUCCESS: id=$id');
+    } catch (e) {
+      debugPrint('[NotificationService] scheduleOneTime ERROR: $e');
     }
-
-    await _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      next,
-      _details(channelId: _examChannelId, channelName: _examChannelName),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
-    );
+    debugPrint('[NotificationService] scheduleOneTime EXIT');
   }
 
   Future<void> cancel(int id) async {

@@ -5,6 +5,26 @@ import '../models/exam_event.dart';
 import '../services/exam_automation_service.dart';
 import '../services/focus_timer_service.dart';
 import '../services/local_store_service.dart';
+import '../services/notification_service.dart';
+
+String _formatDate(DateTime value) {
+  final month = value.month.toString().padLeft(2, '0');
+  final day = value.day.toString().padLeft(2, '0');
+  return '${value.year}-$month-$day';
+}
+
+String _formatDuration(Duration value) {
+  final minutes = value.inMinutes.toString().padLeft(2, '0');
+  final seconds = (value.inSeconds % 60).toString().padLeft(2, '0');
+  return '$minutes:$seconds';
+}
+
+String _calendarDateOnly(DateTime value) {
+  final year = value.year.toString().padLeft(4, '0');
+  final month = value.month.toString().padLeft(2, '0');
+  final day = value.day.toString().padLeft(2, '0');
+  return '$year$month$day';
+}
 
 class CountdownAndFocusScreen extends StatefulWidget {
   const CountdownAndFocusScreen({super.key, required this.storeService});
@@ -17,10 +37,8 @@ class CountdownAndFocusScreen extends StatefulWidget {
 
 class _CountdownAndFocusScreenState extends State<CountdownAndFocusScreen> {
   late final ExamAutomationService _examService;
-
   List<ExamEvent> _exams = <ExamEvent>[];
   bool _loading = true;
-
   int _focusMinutes = 25;
 
   @override
@@ -196,12 +214,39 @@ class _CountdownAndFocusScreenState extends State<CountdownAndFocusScreen> {
 
   // TEMPORARY TEST METHOD - Remove after testing
   Future<void> _scheduleTestNotification() async {
-    try {
-      await _examService.scheduleTestNotification();
+    // ignore: avoid_print
+    print('[StudyPlannerScreen] _scheduleTestNotification() ENTRY');
+    final enabled = NotificationService.instance.notificationsEnabled;
+    // ignore: avoid_print
+    print('[StudyPlannerScreen] _scheduleTestNotification pressed, notificationsEnabled=$enabled');
+    if (!enabled) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Test notification scheduled for 2 minutes from now. Close the app and wait!'),
+            content: Text(
+              'Notifications are disabled. Please enable them in system settings.',
+            ),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+      // ignore: avoid_print
+      print('[StudyPlannerScreen] Permission check failed, aborting test notification');
+      return;
+    }
+
+    try {
+      // ignore: avoid_print
+      print('[StudyPlannerScreen] Before calling _examService.scheduleTestNotification()');
+      await _examService.scheduleTestNotification();
+      // ignore: avoid_print
+      print('[StudyPlannerScreen] After calling _examService.scheduleTestNotification()');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Test notification scheduled for 15 seconds from now. Close the app and wait!',
+            ),
             duration: Duration(seconds: 4),
           ),
         );
@@ -215,11 +260,17 @@ class _CountdownAndFocusScreenState extends State<CountdownAndFocusScreen> {
           ),
         );
       }
+      // ignore: avoid_print
+      print('[StudyPlannerScreen] scheduleTestNotification() error: $e');
     }
+    // ignore: avoid_print
+    print('[StudyPlannerScreen] _scheduleTestNotification() EXIT');
   }
 
   @override
   Widget build(BuildContext context) {
+    // ignore: avoid_print
+    print('[StudyPlannerScreen] build() called');
     final theme = Theme.of(context);
 
     return _loading
@@ -236,7 +287,7 @@ class _CountdownAndFocusScreenState extends State<CountdownAndFocusScreen> {
                       Text('Exam Countdown', style: theme.textTheme.titleLarge),
                       const SizedBox(height: 6),
                       const Text(
-                        'Important exams get daily reminders automatically and are removed once completed.',
+                        'Important exams get daily reminders automatically and countdown notifications when approaching. Exams are removed once completed.',
                       ),
                       const SizedBox(height: 12),
                       FilledButton.icon(
@@ -272,7 +323,7 @@ class _CountdownAndFocusScreenState extends State<CountdownAndFocusScreen> {
                         '${exam.subject} • ${_formatDate(exam.examDate)} • ${daysLeft == 0 ? 'Today' : '$daysLeft days left'}',
                       ),
                       trailing: const Tooltip(
-                        message: 'Daily reminder enforced',
+                        message: 'Daily reminders + countdown notifications enforced',
                         child: Icon(Icons.notifications_active_outlined),
                       ),
                     ),
@@ -356,11 +407,15 @@ class _CountdownAndFocusScreenState extends State<CountdownAndFocusScreen> {
                           style: theme.textTheme.titleLarge),
                       const SizedBox(height: 6),
                       const Text(
-                        'Test if notifications work when the app is closed. Schedules a test notification for 2 minutes from now.',
+                        'Test if notifications work when the app is closed. Schedules a test notification for 15 seconds from now.',
                       ),
                       const SizedBox(height: 12),
                       FilledButton.icon(
-                        onPressed: _scheduleTestNotification,
+                        onPressed: () {
+                          // ignore: avoid_print
+                          print('[StudyPlannerScreen] Schedule Test Notification button pressed');
+                          _scheduleTestNotification();
+                        },
                         icon: const Icon(Icons.notifications_active),
                         label: const Text('Schedule Test Notification'),
                       ),
@@ -371,26 +426,6 @@ class _CountdownAndFocusScreenState extends State<CountdownAndFocusScreen> {
             ],
           );
   }
-
-  static String _formatDate(DateTime value) {
-    final month = value.month.toString().padLeft(2, '0');
-    final day = value.day.toString().padLeft(2, '0');
-    return '${value.year}-$month-$day';
-  }
-
-  static String _formatDuration(Duration value) {
-    final minutes = value.inMinutes.toString().padLeft(2, '0');
-    final seconds = (value.inSeconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
-  static String _calendarDateOnly(DateTime value) {
-    final year = value.year.toString().padLeft(4, '0');
-    final month = value.month.toString().padLeft(2, '0');
-    final day = value.day.toString().padLeft(2, '0');
-    return '$year$month$day';
-  }
-
 }
 
 

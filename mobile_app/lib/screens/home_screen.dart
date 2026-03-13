@@ -5,7 +5,7 @@ import 'calendar_screen.dart';
 import 'chat_screen.dart';
 import 'collab_screen.dart';
 import 'notes_screen.dart';
-import 'study_planner_screen.dart';
+import 'package:school_assistant_mobile/screens/study_planner_screen.dart';
 import 'tests_screen.dart';
 import 'timetable_screen.dart';
 import 'todo_screen.dart';
