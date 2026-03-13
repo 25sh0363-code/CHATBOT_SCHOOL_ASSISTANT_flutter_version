@@ -45,3 +45,6 @@ logs/
 # Temp files
 *.tmp
 temp/
+
+# Local Android tooling archives
+mobile_app/commandlinetools.zip

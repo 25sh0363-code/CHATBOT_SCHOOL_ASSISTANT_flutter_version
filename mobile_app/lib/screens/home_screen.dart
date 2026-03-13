@@ -5,7 +5,7 @@ import 'calendar_screen.dart';
 import 'chat_screen.dart';
 import 'collab_screen.dart';
 import 'notes_screen.dart';
-import 'package:school_assistant_mobile/screens/study_planner_screen.dart';
+import 'study_planner_screen.dart';
 import 'tests_screen.dart';
 import 'timetable_screen.dart';
 import 'todo_screen.dart';
@@ -19,7 +19,7 @@ class HomeScreen extends StatefulWidget {
   });
 
   final bool isDarkMode;
-  final Future<void> Function() onToggleTheme;
+  final VoidCallback onToggleTheme;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -113,8 +113,10 @@ class _DecorativeBackground extends StatelessWidget {
             top: -80,
             right: -60,
             child: _GlowCircle(
-              color:
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
+              color: Theme.of(context)
+                  .colorScheme
+                  .primary
+                  .withValues(alpha: 0.18),
               size: 220,
             ),
           ),
@@ -146,10 +148,7 @@ class _GlowCircle extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-      ),
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
     );
   }
 }
@@ -173,93 +172,53 @@ class _MoreHub extends StatelessWidget {
           icon: Icons.analytics_outlined,
           title: 'Tests',
           subtitle: 'Track marks and performance trends.',
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _FeatureHostPage(
-                  title: 'Tests',
-                  child: TestsScreen(storeService: storeService),
-                ),
-              ),
-            );
-          },
+          onTap: () => _push(
+              context, 'Tests', TestsScreen(storeService: storeService)),
         ),
         _FeatureCard(
           icon: Icons.calendar_month_outlined,
           title: 'Calendar',
           subtitle: 'See upcoming deadlines and study plans.',
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _FeatureHostPage(
-                  title: 'Calendar',
-                  child: CalendarScreen(storeService: storeService),
-                ),
-              ),
-            );
-          },
+          onTap: () => _push(context, 'Calendar',
+              CalendarScreen(storeService: storeService)),
         ),
         _FeatureCard(
           icon: Icons.schedule_outlined,
           title: 'Timetable',
           subtitle: 'Manage your class flow and routines.',
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _FeatureHostPage(
-                  title: 'Timetable',
-                  child: TimetableScreen(storeService: storeService),
-                ),
-              ),
-            );
-          },
+          onTap: () => _push(context, 'Timetable',
+              TimetableScreen(storeService: storeService)),
         ),
         _FeatureCard(
           icon: Icons.description_outlined,
           title: 'Worksheets',
           subtitle: 'Store and revisit worksheet files quickly.',
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _FeatureHostPage(
-                  title: 'Worksheets',
-                  child: WorksheetScreen(storeService: storeService),
-                ),
-              ),
-            );
-          },
+          onTap: () => _push(context, 'Worksheets',
+              WorksheetScreen(storeService: storeService)),
         ),
         _FeatureCard(
           icon: Icons.timer_outlined,
           title: 'Countdown & Focus',
           subtitle: 'Exam countdown with daily reminders and focus timer.',
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _FeatureHostPage(
-                  title: 'Countdown & Focus',
-                  child: CountdownAndFocusScreen(storeService: storeService),
-                ),
-              ),
-            );
-          },
+          onTap: () => _push(context, 'Countdown & Focus',
+              StudyPlannerScreen(storeService: storeService)),
         ),
         _FeatureCard(
           icon: Icons.groups_2_outlined,
           title: 'Collab Hub',
           subtitle: 'Google sign-in, group chat, sharing, and Meet links.',
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _FeatureHostPage(
-                  title: 'Collab Hub',
-                  child: CollabScreen(storeService: storeService),
-                ),
-              ),
-            );
-          },
+          onTap: () => _push(context, 'Collab Hub',
+              CollabScreen(storeService: storeService)),
         ),
       ],
+    );
+  }
+
+  void _push(BuildContext context, String title, Widget child) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _FeatureHostPage(title: title, child: child),
+      ),
     );
   }
 }

@@ -13,6 +13,23 @@ import '../models/todo_item.dart';
 import '../models/worksheet_record.dart';
 
 class LocalStoreService {
+    static const String _dailyReminderHourKey = 'daily_reminder_hour_v1';
+    static const String _dailyReminderMinuteKey = 'daily_reminder_minute_v1';
+    Future<int> loadDailyReminderHour() async {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_dailyReminderHourKey) ?? 7;
+    }
+
+    Future<int> loadDailyReminderMinute() async {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_dailyReminderMinuteKey) ?? 0;
+    }
+
+    Future<void> saveDailyReminderTime(int hour, int minute) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_dailyReminderHourKey, hour);
+      await prefs.setInt(_dailyReminderMinuteKey, minute);
+    }
   static const String _testsKey = 'tests_v1';
   static const String _timetableKey = 'timetable_v1';
   static const String _worksheetsKey = 'worksheets_v1';

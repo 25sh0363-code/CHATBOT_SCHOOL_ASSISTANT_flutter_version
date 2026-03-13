@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'screens/home_screen.dart';
 import 'screens/sinovate_splash_screen.dart';
-import 'services/exam_automation_service.dart';
 import 'services/focus_timer_service.dart';
 import 'services/local_store_service.dart';
-import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -42,15 +40,10 @@ class _SchoolAssistantAppState extends State<SchoolAssistantApp> {
   }
 
   Future<void> _initializeApp() async {
-    await NotificationService.instance.initialize();
     await FocusTimerService.instance.initialize(storeService: _storeService);
     final enabled = await _storeService.loadDarkModeEnabled();
-    final examAutomation = ExamAutomationService(storeService: _storeService);
-    await examAutomation.loadCleanedAndSynced();
     await Future<void>.delayed(const Duration(milliseconds: 1800));
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     setState(() {
       _themeMode = enabled ? ThemeMode.dark : ThemeMode.light;
       _initializing = false;
@@ -60,20 +53,14 @@ class _SchoolAssistantAppState extends State<SchoolAssistantApp> {
   Future<void> _toggleTheme() async {
     final isDark = _themeMode == ThemeMode.dark;
     final nextMode = isDark ? ThemeMode.light : ThemeMode.dark;
-    setState(() {
-      _themeMode = nextMode;
-    });
+    setState(() => _themeMode = nextMode);
     await _storeService.saveDarkModeEnabled(nextMode == ThemeMode.dark);
   }
 
   void _handleFocusCompletion() {
-    // Defer to next frame so the dialog is never called mid-frame (e.g. from
-    // inside a Timer.periodic tick) which would cause it to silently fail.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final context = _navigatorKey.currentContext;
-      if (context == null) {
-        return;
-      }
+      if (context == null) return;
 
       final theme = Theme.of(context);
       showDialog<void>(
@@ -93,11 +80,8 @@ class _SchoolAssistantAppState extends State<SchoolAssistantApp> {
                   padding: const EdgeInsets.symmetric(vertical: 28),
                   child: Column(
                     children: [
-                      const Icon(
-                        Icons.emoji_events_rounded,
-                        size: 64,
-                        color: Colors.amber,
-                      ),
+                      const Icon(Icons.emoji_events_rounded,
+                          size: 64, color: Colors.amber),
                       const SizedBox(height: 10),
                       Text(
                         'Focus Complete!',
@@ -184,9 +168,7 @@ class _FocusTimerOverlay extends StatelessWidget {
         child: ValueListenableBuilder<Duration>(
           valueListenable: FocusTimerService.instance.remaining,
           builder: (context, remaining, _) {
-            if (remaining <= Duration.zero) {
-              return const SizedBox.shrink();
-            }
+            if (remaining <= Duration.zero) return const SizedBox.shrink();
 
             final minutes = remaining.inMinutes.toString().padLeft(2, '0');
             final seconds =
@@ -203,7 +185,8 @@ class _FocusTimerOverlay extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surface,
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                    border:
+                        Border.all(color: theme.colorScheme.outlineVariant),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.12),
@@ -218,11 +201,8 @@ class _FocusTimerOverlay extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Icon(
-                            Icons.timer_outlined,
-                            color: theme.colorScheme.primary,
-                            size: 20,
-                          ),
+                          Icon(Icons.timer_outlined,
+                              color: theme.colorScheme.primary, size: 20),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -255,9 +235,7 @@ class _FocusTimerOverlay extends StatelessWidget {
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
-                          onPressed: () {
-                            FocusTimerService.instance.stop();
-                          },
+                          onPressed: () => FocusTimerService.instance.stop(),
                           icon: const Icon(Icons.stop_circle_outlined),
                           label: const Text('Stop'),
                         ),
