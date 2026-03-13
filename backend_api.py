@@ -22,19 +22,26 @@ from pydantic import BaseModel, Field
 from PyPDF2 import PdfReader
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4.1-nano")
-NOTES_MODEL = os.getenv("NOTES_MODEL", "gpt-4.1-mini")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4.1-mini")  # Balanced cost + quality
+NOTES_MODEL = os.getenv("NOTES_MODEL", "gpt-4.1-mini")  # Use same model for notes for consistency
 VISION_CHAT_MODEL = os.getenv("VISION_CHAT_MODEL", "gpt-4.1-mini")
 VECTORSTORE_DIR = Path("vectorstore/faiss_index")
 VECTORSTORE_INDEX_PATH = VECTORSTORE_DIR / "index.faiss"
+
+# Retrieval sizing controls how much context is fed into the model.
+# Larger values improve quality but increase token cost.
 RETRIEVAL_CANDIDATE_K = int(os.getenv("RETRIEVAL_CANDIDATE_K", "10"))
 RETRIEVAL_FINAL_K = int(os.getenv("RETRIEVAL_FINAL_K", "5"))
 RETRIEVAL_CHARS_PER_CHUNK = int(os.getenv("RETRIEVAL_CHARS_PER_CHUNK", "700"))
 RETRIEVAL_MAX_CONTEXT_CHARS = int(os.getenv("RETRIEVAL_MAX_CONTEXT_CHARS", "2800"))
+
+# Conversation history limits
 MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "3"))
 MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "500"))
+
+# Token limits (keep moderate to avoid high cost)
 CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "650"))
-NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1200"))
+NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1000"))
 
 
 class ChatRequest(BaseModel):
@@ -485,27 +492,35 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
         )
 
     system_prompt = (
-        "You are an expert Class 11-12 chemistry and physics tutor grounded in retrieved study materials.\n"
+        "You are an expert Class 11-12 chemistry and physics tutor grounded in NCERT study materials.\n"
         "CRITICAL: Always read the entire conversation history to understand what 'this', 'that', 'these topics', 'it', etc. refer to.\n"
         "When a user says 'make a worksheet on these topics' or 'explain that', look at the previous messages to understand the context.\n"
+        "\n"
+        "**QUALITY REQUIREMENTS:**\n"
+        "- Provide comprehensive, accurate answers based on NCERT content\n"
+        "- Include relevant formulas, derivations, and numerical problems\n"
+        "- Explain concepts with real-world applications and examples\n"
+        "- Cover all aspects of the topic as per NCERT syllabus\n"
+        "- Use step-by-step explanations for problem-solving\n"
         "\n"
         "**FORMATTING REQUIREMENTS:**\n"
         "- Use Markdown formatting for better readability\n"
         "- Use ## for main headings, ### for subheadings\n"
-        "- Use **bold** for important terms\n"
-        "- Use tables for comparisons (| Column 1 | Column 2 |\n|---------|---------|\n| data | data |)\n"
-        "- Use bullet points (- item) or numbered lists (1. item) for steps\n"
-        "- Use inline code `like this` for formulas and chemical symbols\n"
-        "- Use > for important notes or key points\n"
-        "- For equations, use readable format: F = ma, E = mc², PV = nRT, etc.\n"
-        "- Use Unicode symbols: θ α β γ Δ π × · ± ≈ √\n"
+        "- Use **bold** for important terms and formulas\n"
+        "- Use tables for comparisons and data (| Column 1 | Column 2 |\n|---------|---------|\n| data | data |)\n"
+        "- Use bullet points (- item) or numbered lists (1. item) for steps and key points\n"
+        "- Use inline code `like this` for formulas and chemical symbols: `H₂O`, `E = mc²`\n"
+        "- Use > for important notes, formulas, and key concepts\n"
+        "- For equations, use proper LaTeX-style formatting when possible\n"
+        "- Use Unicode symbols: θ α β γ Δ π × · ± ≈ √ ∑ ∫ ∇ ∂\n"
         "\n"
-        "Always prioritize retrieved context over model memory.\n"
-        "When retrieved context is sufficient, answer strictly from it.\n"
-        "If context is incomplete and strict textbook mode is NOT requested, complete with careful domain knowledge.\n"
-        "If strict textbook mode is requested, do not add outside facts.\n"
-        "Prefer concise, exam-ready answers with steps and key points.\n\n"
-        f"Retrieved Context:\n{context if used_context else 'No relevant context retrieved.'}\n\n"
+        "**ANSWERING PRINCIPLES:**\n"
+        "Always prioritize retrieved NCERT context over general knowledge.\n"
+        "When retrieved context is sufficient, answer strictly from it with full detail.\n"
+        "If context is incomplete, supplement with accurate domain knowledge that aligns with NCERT.\n"
+        "Provide exam-ready answers with complete solutions and explanations.\n"
+        "Include common mistakes to avoid and important tips for students.\n\n"
+        f"Retrieved NCERT Context:\n{context if used_context else 'No relevant NCERT context retrieved.'}\n\n"
         f"Strict textbook mode: {'yes' if strict_mode else 'no'}"
     )
 

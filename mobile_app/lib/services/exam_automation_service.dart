@@ -10,8 +10,6 @@ class ExamAutomationService {
 
   static const int _dailyReminderHour = 7;
   static const int _dailyReminderMinute = 0;
-  // Max individual countdown notifications scheduled per exam.
-  static const int _maxCountdownDays = 60;
 
   Future<List<ExamEvent>> loadCleanedAndSynced() async {
     final exams = await _storeService.loadExamEvents();
@@ -19,11 +17,7 @@ class ExamAutomationService {
 
     if (cleaned.length != exams.length) {
       // Cancel notifications for exams that have now passed.
-      for (final exam in exams) {
-        if (!cleaned.any((e) => e.id == exam.id)) {
-          _cancelCountdown(exam.id).ignore();
-        }
-      }
+      await _cancelAllDailyReminders();
       await _storeService.saveExamEvents(cleaned);
     }
 
@@ -43,64 +37,93 @@ class ExamAutomationService {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    for (final exam in exams) {
-      // Cancel all previously scheduled countdown slots for this exam.
-      await _cancelCountdown(exam.id);
+    // Cancel all existing daily reminders
+    await _cancelAllDailyReminders();
 
+    if (exams.isEmpty) return;
+
+    // Find the next upcoming exam
+    ExamEvent? nextExam;
+    int minDaysLeft = double.maxFinite.toInt();
+
+    for (final exam in exams) {
       final examDate = DateTime(
         exam.examDate.year,
         exam.examDate.month,
         exam.examDate.day,
       );
       final daysLeft = examDate.difference(today).inDays;
-      if (daysLeft < 0) continue;
-
-      // Schedule one notification per day from today until exam day (up to
-      // _maxCountdownDays). Each message reflects how many days are left.
-      for (var i = 0; i <= daysLeft.clamp(0, _maxCountdownDays - 1); i++) {
-        final notifyAt = DateTime(
-          today.year,
-          today.month,
-          today.day + i,
-          _dailyReminderHour,
-          _dailyReminderMinute,
-        );
-        if (notifyAt.isBefore(now)) continue;
-
-        final daysRemaining = daysLeft - i;
-        final body = daysRemaining == 0
-            ? 'Today is the day! Good luck on your ${exam.title} exam!'
-            : daysRemaining == 1
-                ? 'Tomorrow is your ${exam.title} exam — final revision time!'
-                : '$daysRemaining days until your ${exam.title}'
-                    ' (${exam.subject}) exam. Keep revising!';
-
-        try {
-          await NotificationService.instance.scheduleOneTime(
-            id: _countdownId(exam.id, i),
-            title: 'Exam Countdown: ${exam.title}',
-            body: body,
-            at: notifyAt,
-          );
-        } catch (_) {}
+      if (daysLeft >= 0 && daysLeft < minDaysLeft) {
+        minDaysLeft = daysLeft;
+        nextExam = exam;
       }
     }
+
+    if (nextExam == null) return;
+
+    // Determine when to schedule the next notification
+    DateTime notifyAt;
+    String body;
+
+    if (minDaysLeft == 0) {
+      // Exam is today - schedule for 7am if it's before 7am, otherwise don't schedule
+      final today7am = DateTime(
+        today.year,
+        today.month,
+        today.day,
+        _dailyReminderHour,
+        _dailyReminderMinute,
+      );
+      if (now.isBefore(today7am)) {
+        notifyAt = today7am;
+        body = 'Today is the day! Good luck on your ${nextExam.title} exam!';
+      } else {
+        // Already past 7am, don't schedule notification for today
+        return;
+      }
+    } else {
+      // Schedule for tomorrow at 7am
+      final tomorrow = today.add(const Duration(days: 1));
+      notifyAt = DateTime(
+        tomorrow.year,
+        tomorrow.month,
+        tomorrow.day,
+        _dailyReminderHour,
+        _dailyReminderMinute,
+      );
+
+      body = minDaysLeft == 1
+          ? 'Tomorrow is your ${nextExam.title} exam — final revision time!'
+          : '${minDaysLeft - 1} days until your ${nextExam.title} (${nextExam.subject}) exam. Keep revising!';
+    }
+
+    final title = 'Exam Countdown: ${nextExam.title}';
+
+    try {
+      await NotificationService.instance.scheduleOneTime(
+        id: _dailyReminderId(nextExam.id),
+        title: title,
+        body: body,
+        at: notifyAt,
+      );
+    } catch (_) {}
   }
 
-  Future<void> _cancelCountdown(String examId) async {
-    for (var i = 0; i < _maxCountdownDays; i++) {
+  Future<void> _cancelAllDailyReminders() async {
+    // Cancel all possible daily reminder IDs (we'll use a simple ID scheme)
+    for (var i = 0; i < 1000; i++) {
       try {
-        await NotificationService.instance.cancel(_countdownId(examId, i));
+        await NotificationService.instance.cancel(800000 + i);
       } catch (_) {}
     }
   }
 
-  int _countdownId(String examId, int dayOffset) {
+  int _dailyReminderId(String examId) {
     var hash = 0;
     for (final rune in examId.runes) {
-      hash = (hash * 31 + rune) & 0x7fffffff;
+      hash = (hash * 31 + rune) & 0x7FFFFFFF;
     }
-    return 200000 + (hash % 10000) * _maxCountdownDays + dayOffset;
+    return 800000 + (hash % 1000);
   }
 
   List<ExamEvent> _removeCompletedExams(List<ExamEvent> exams) {
@@ -111,5 +134,23 @@ class ExamAutomationService {
           DateTime(exam.examDate.year, exam.examDate.month, exam.examDate.day);
       return !date.isBefore(today);
     }).toList();
+  }
+
+  // TEMPORARY TEST METHOD - Remove after testing
+  Future<void> scheduleTestNotification() async {
+    final now = DateTime.now();
+    final testTime = now.add(const Duration(minutes: 2)); // 2 minutes from now
+
+    try {
+      await NotificationService.instance.scheduleOneTime(
+        id: 999999, // Unique test ID
+        title: '🧪 Test Notification',
+        body: 'This is a test to verify notifications work when app is closed. If you see this, notifications are working!',
+        at: testTime,
+      );
+      print('Test notification scheduled for ${testTime.toString()}');
+    } catch (e) {
+      print('Failed to schedule test notification: $e');
+    }
   }
 }

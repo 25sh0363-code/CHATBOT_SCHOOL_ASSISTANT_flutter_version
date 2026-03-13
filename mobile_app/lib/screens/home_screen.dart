@@ -230,15 +230,15 @@ class _MoreHub extends StatelessWidget {
           },
         ),
         _FeatureCard(
-          icon: Icons.track_changes_outlined,
-          title: 'Study Planner',
-          subtitle: 'Revision planner, exam countdown, and focus timer.',
+          icon: Icons.timer_outlined,
+          title: 'Countdown & Focus',
+          subtitle: 'Exam countdown with daily reminders and focus timer.',
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => _FeatureHostPage(
-                  title: 'Study Planner',
-                  child: StudyPlannerScreen(storeService: storeService),
+                  title: 'Countdown & Focus',
+                  child: CountdownAndFocusScreen(storeService: storeService),
                 ),
               ),
             );

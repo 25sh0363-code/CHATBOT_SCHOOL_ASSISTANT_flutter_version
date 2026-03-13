@@ -6,23 +6,20 @@ import '../services/exam_automation_service.dart';
 import '../services/focus_timer_service.dart';
 import '../services/local_store_service.dart';
 
-class StudyPlannerScreen extends StatefulWidget {
-  const StudyPlannerScreen({super.key, required this.storeService});
+class CountdownAndFocusScreen extends StatefulWidget {
+  const CountdownAndFocusScreen({super.key, required this.storeService});
 
   final LocalStoreService storeService;
 
   @override
-  State<StudyPlannerScreen> createState() => _StudyPlannerScreenState();
+  State<CountdownAndFocusScreen> createState() => _CountdownAndFocusScreenState();
 }
 
-class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
+class _CountdownAndFocusScreenState extends State<CountdownAndFocusScreen> {
   late final ExamAutomationService _examService;
 
   List<ExamEvent> _exams = <ExamEvent>[];
   bool _loading = true;
-
-  double _hoursPerDay = 2;
-  int _planDays = 7;
 
   int _focusMinutes = 25;
 
@@ -197,52 +194,33 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
     await FocusTimerService.instance.stop();
   }
 
-  List<_RevisionEntry> _buildRevisionPlan() {
-    if (_exams.isEmpty) {
-      return const [];
-    }
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final upcoming = _exams.where((e) {
-      final date = DateTime(e.examDate.year, e.examDate.month, e.examDate.day);
-      return !date.isBefore(today);
-    }).toList();
-    if (upcoming.isEmpty) {
-      return const [];
-    }
-
-    final plan = <_RevisionEntry>[];
-    final sessionsPerDay = _hoursPerDay <= 1 ? 1 : (_hoursPerDay.round());
-
-    for (var i = 0; i < _planDays; i++) {
-      final day = today.add(Duration(days: i));
-      for (var slot = 0; slot < sessionsPerDay; slot++) {
-        final targetExam = upcoming[(i + slot) % upcoming.length];
-        final daysLeft = targetExam.examDate.difference(day).inDays;
-        final intensity = daysLeft <= 3
-            ? 'High-priority revision'
-            : daysLeft <= 10
-                ? 'Core concept revision'
-                : 'Concept + practice revision';
-        plan.add(
-          _RevisionEntry(
-            date: day,
-            subject: targetExam.subject,
-            task: '$intensity for ${targetExam.title}',
-            minutes: (60 * _hoursPerDay / sessionsPerDay).round(),
+  // TEMPORARY TEST METHOD - Remove after testing
+  Future<void> _scheduleTestNotification() async {
+    try {
+      await _examService.scheduleTestNotification();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Test notification scheduled for 2 minutes from now. Close the app and wait!'),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to schedule test notification: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
     }
-
-    return plan;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final revisionPlan = _buildRevisionPlan();
 
     return _loading
         ? const Center(child: CircularProgressIndicator())
@@ -300,85 +278,6 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
                     ),
                   );
                 }),
-              const SizedBox(height: 12),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Revision Planner',
-                          style: theme.textTheme.titleLarge),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          const Text('Hours/day'),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Slider(
-                              min: 1,
-                              max: 6,
-                              divisions: 10,
-                              value: _hoursPerDay,
-                              label: _hoursPerDay.toStringAsFixed(1),
-                              onChanged: (value) {
-                                setState(() {
-                                  _hoursPerDay = value;
-                                });
-                              },
-                            ),
-                          ),
-                          Text(_hoursPerDay.toStringAsFixed(1)),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          const Text('Plan days'),
-                          const SizedBox(width: 10),
-                          ChoiceChip(
-                            label: const Text('7'),
-                            selected: _planDays == 7,
-                            onSelected: (_) => setState(() => _planDays = 7),
-                          ),
-                          const SizedBox(width: 8),
-                          ChoiceChip(
-                            label: const Text('14'),
-                            selected: _planDays == 14,
-                            onSelected: (_) => setState(() => _planDays = 14),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      if (revisionPlan.isEmpty)
-                        const Text('Add exams to generate your revision plan.')
-                      else
-                        ...revisionPlan.take(20).map((entry) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                SizedBox(
-                                  width: 90,
-                                  child: Text(
-                                    _formatDate(entry.date),
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    '${entry.subject}: ${entry.task} (${entry.minutes} min)',
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                    ],
-                  ),
-                ),
-              ),
               const SizedBox(height: 12),
               Card(
                 child: Padding(
@@ -445,6 +344,30 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 10),
+              // TEMPORARY TEST CARD - Remove after testing
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('🧪 Test Notifications',
+                          style: theme.textTheme.titleLarge),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Test if notifications work when the app is closed. Schedules a test notification for 2 minutes from now.',
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: _scheduleTestNotification,
+                        icon: const Icon(Icons.notifications_active),
+                        label: const Text('Schedule Test Notification'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           );
   }
@@ -470,16 +393,4 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
 
 }
 
-class _RevisionEntry {
-  const _RevisionEntry({
-    required this.date,
-    required this.subject,
-    required this.task,
-    required this.minutes,
-  });
 
-  final DateTime date;
-  final String subject;
-  final String task;
-  final int minutes;
-}
