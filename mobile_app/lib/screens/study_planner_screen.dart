@@ -4,15 +4,6 @@ import '../models/exam_event.dart';
 import '../services/focus_timer_service.dart';
 import '../services/local_store_service.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// _ExamCalendarService
-// Creates 3 Google Calendar events per exam:
-//   1. Recurring daily from today until 2 days before exam
-//   2. Eve of exam — single special event
-//   3. Exam day — single special event
-// Each call opens Google Calendar once; user taps Save 3 times total.
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _ExamCalendarService {
   _ExamCalendarService._();
   static final _ExamCalendarService instance = _ExamCalendarService._();
@@ -29,16 +20,10 @@ class _ExamCalendarService {
     final examOnly = DateTime(examDate.year, examDate.month, examDate.day);
     final daysLeft = examOnly.difference(todayOnly).inDays;
 
-    // Reminder offset in minutes from midnight (for all-day events)
     final reminderOffset = reminderHour * 60 + reminderMinute;
 
-    // ── Event 1: recurring daily countdown ──────────────────────────────────
-    // Runs from today until the day before eve-of-exam (i.e. until examDate - 2).
-    // Only created if exam is more than 2 days away.
     if (daysLeft > 2) {
       final recurringStart = todayOnly;
-      // UNTIL is exclusive in RRULE, so set it to examDate - 1 day
-      // so the last recurring occurrence is examDate - 2 days.
       final recurringUntil = examOnly.subtract(const Duration(days: 1));
 
       await _openCalendar(
@@ -48,17 +33,13 @@ class _ExamCalendarService {
             'Exam date: ${_readable(examOnly)}\n'
             'Daily reminder until 2 days before your exam.',
         startDate: recurringStart,
-        endDate: recurringStart.add(const Duration(days: 1)),
         rrule: 'RRULE:FREQ=DAILY;UNTIL=${_dateOnly(recurringUntil)}T000000Z',
         reminderOffset: reminderOffset,
       );
     }
 
-    // ── Event 2: eve of exam ─────────────────────────────────────────────────
-    // Only created if exam is at least 1 day away.
     if (daysLeft >= 1) {
       final eveDate = examOnly.subtract(const Duration(days: 1));
-      // Only show eve event if it's today or in the future
       if (!eveDate.isBefore(todayOnly)) {
         await _openCalendar(
           title: '⚡ Tomorrow is your $examTitle exam! Last chance to revise!',
@@ -67,14 +48,12 @@ class _ExamCalendarService {
               'Your exam is TOMORROW — ${_readable(examOnly)}.\n'
               'Prepare everything tonight!',
           startDate: eveDate,
-          endDate: eveDate.add(const Duration(days: 1)),
-          rrule: null, // single event
+          rrule: null,
           reminderOffset: reminderOffset,
         );
       }
     }
 
-    // ── Event 3: exam day ────────────────────────────────────────────────────
     if (!examOnly.isBefore(todayOnly)) {
       await _openCalendar(
         title: '🎯 TODAY IS YOUR $examTitle EXAM! ALL THE BEST!!!',
@@ -82,8 +61,7 @@ class _ExamCalendarService {
             'Subject: $subject\n'
             'This is it! You\'ve got this. Give it your all! 💪',
         startDate: examOnly,
-        endDate: examOnly.add(const Duration(days: 1)),
-        rrule: null, // single event
+        rrule: null,
         reminderOffset: reminderOffset,
       );
     }
@@ -93,30 +71,49 @@ class _ExamCalendarService {
     required String title,
     required String description,
     required DateTime startDate,
-    required DateTime endDate,
     required String? rrule,
     required int reminderOffset,
   }) async {
+    // Convert reminderOffset (total minutes) back to hour & minute
+    final hour = reminderOffset ~/ 60;
+    final minute = reminderOffset % 60;
+
+    // Build timed start (at user's chosen reminder time) and end (1 hour later)
+    final timedStart = DateTime(
+      startDate.year, startDate.month, startDate.day, hour, minute,
+    );
+    final timedEnd = timedStart.add(const Duration(hours: 1));
+
     final params = <String, String>{
       'action': 'TEMPLATE',
       'text': title,
-      'dates': '${_dateOnly(startDate)}/${_dateOnly(endDate)}',
+      // Use local datetime format (no Z) so Google Calendar uses the user's timezone
+      'dates': '${_dateTime(timedStart)}/${_dateTime(timedEnd)}',
       'details': description,
-      'reminder': reminderOffset.toString(),
+      'reminder': '0', // popup notification at event start time
     };
-    if (rrule != null) params['recur'] = rrule;
+
+    if (rrule != null) {
+      // Replace the date-only UNTIL with a datetime UNTIL matching the timed event
+      final untilTime =
+          '${hour.toString().padLeft(2, '0')}'
+          '${minute.toString().padLeft(2, '0')}00Z';
+      final updatedRrule = rrule.replaceFirstMapped(
+        RegExp(r'UNTIL=(\d{8})T000000Z'),
+        (m) => 'UNTIL=${m[1]}T$untilTime',
+      );
+      params['recur'] = updatedRrule;
+    }
 
     final uri = Uri.https('calendar.google.com', '/calendar/render', params);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-      // Small delay so Calendar has time to open before we fire the next one
       await Future<void>.delayed(const Duration(milliseconds: 800));
     } else {
       throw Exception('Could not open Google Calendar. Is it installed?');
     }
   }
 
-  /// Opens Google Calendar search so the user can find and delete events.
   Future<void> openSearchForDeletion({required String examTitle}) async {
     final uri = Uri.https('calendar.google.com', '/calendar/search', {
       'q': examTitle,
@@ -130,6 +127,16 @@ class _ExamCalendarService {
       );
     }
   }
+
+  /// Format: YYYYMMDDTHHmmss (local time, no Z — respects user's timezone)
+  String _dateTime(DateTime dt) =>
+      '${dt.year}'
+      '${dt.month.toString().padLeft(2, '0')}'
+      '${dt.day.toString().padLeft(2, '0')}'
+      'T'
+      '${dt.hour.toString().padLeft(2, '0')}'
+      '${dt.minute.toString().padLeft(2, '0')}'
+      '00';
 
   String _dateOnly(DateTime dt) =>
       '${dt.year}${dt.month.toString().padLeft(2, '0')}${dt.day.toString().padLeft(2, '0')}';
@@ -306,7 +313,7 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
             FilledButton(
               onPressed: () {
                 if (titleController.text.trim().isEmpty ||
-                    subjectController.text.trim().isEmpty) return;
+                    subjectController.text.trim().isEmpty) { return; }
                 Navigator.of(context).pop(true);
               },
               child: const Text('Save Exam'),
@@ -345,7 +352,6 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
     if (!mounted) return;
     setState(() => _exams = next);
 
-    // Show instructions snackbar before opening Calendar
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
@@ -454,7 +460,6 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
         : ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
-              // ── Exam Countdown card ────────────────────────────────────
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -493,7 +498,6 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
                         label: const Text('Add Important Exam'),
                       ),
                       const SizedBox(height: 18),
-                      // ── Focus Timer ──────────────────────────────────
                       Text('Focus Timer',
                           style: theme.textTheme.titleMedium),
                       const SizedBox(height: 8),
@@ -555,7 +559,6 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              // ── Exam list ──────────────────────────────────────────────
               if (_exams.isEmpty)
                 const Card(
                   child: Padding(
@@ -583,13 +586,13 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Re-open all 3 Calendar events
                           IconButton(
                             icon: const Icon(
                                 Icons.calendar_month_outlined),
                             tooltip: 'Re-add to Google Calendar',
                             onPressed: () async {
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              final messenger = ScaffoldMessenger.of(context);
+                              messenger.showSnackBar(
                                 const SnackBar(
                                   content: Text(
                                       'Google Calendar will open 3 times. Tap Save each time ✅'),
@@ -606,14 +609,12 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
                                 );
                               } catch (e) {
                                 if (mounted) {
-                                  ScaffoldMessenger.of(context)
-                                      .showSnackBar(SnackBar(
-                                          content: Text('$e')));
+                                  messenger.showSnackBar(SnackBar(
+                                      content: Text('$e')));
                                 }
                               }
                             },
                           ),
-                          // Delete exam
                           IconButton(
                             icon: const Icon(Icons.delete_outline),
                             tooltip: 'Remove exam',
