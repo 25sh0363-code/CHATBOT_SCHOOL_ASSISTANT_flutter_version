@@ -22,26 +22,26 @@ from pydantic import BaseModel, Field
 from PyPDF2 import PdfReader
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4.1-mini")  # Balanced cost + quality
-NOTES_MODEL = os.getenv("NOTES_MODEL", "gpt-4.1-mini")  # Use same model for notes for consistency
+CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-5-mini")
+NOTES_MODEL = os.getenv("NOTES_MODEL", "gpt-4.1-mini")
 VISION_CHAT_MODEL = os.getenv("VISION_CHAT_MODEL", "gpt-4.1-mini")
 VECTORSTORE_DIR = Path("vectorstore/faiss_index")
 VECTORSTORE_INDEX_PATH = VECTORSTORE_DIR / "index.faiss"
 
 # Retrieval sizing controls how much context is fed into the model.
-# Larger values improve quality but increase token cost.
-RETRIEVAL_CANDIDATE_K = int(os.getenv("RETRIEVAL_CANDIDATE_K", "10"))
-RETRIEVAL_FINAL_K = int(os.getenv("RETRIEVAL_FINAL_K", "5"))
-RETRIEVAL_CHARS_PER_CHUNK = int(os.getenv("RETRIEVAL_CHARS_PER_CHUNK", "700"))
-RETRIEVAL_MAX_CONTEXT_CHARS = int(os.getenv("RETRIEVAL_MAX_CONTEXT_CHARS", "2800"))
+# Lowered for token savings (see recommendations)
+RETRIEVAL_CANDIDATE_K = int(os.getenv("RETRIEVAL_CANDIDATE_K", "6"))
+RETRIEVAL_FINAL_K = int(os.getenv("RETRIEVAL_FINAL_K", "3"))
+RETRIEVAL_CHARS_PER_CHUNK = int(os.getenv("RETRIEVAL_CHARS_PER_CHUNK", "500"))
+RETRIEVAL_MAX_CONTEXT_CHARS = int(os.getenv("RETRIEVAL_MAX_CONTEXT_CHARS", "1500"))
 
-# Conversation history limits
-MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "3"))
-MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "500"))
+# Conversation history limits (lowered for token savings)
+MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "2"))
+MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "300"))
 
-# Token limits (balanced quality/cost; notes need more room for chapter coverage)
-CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "650"))
-NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1800"))
+# Token limits (lowered for cost savings)
+CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "450"))
+NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1100"))
 
 
 class ChatRequest(BaseModel):
@@ -488,7 +488,14 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
 
     history = trim_history(history)
     
-    context, chunk_count = get_retrieved_context(question)
+    # Cache retrieval results for repeated questions
+    from functools import lru_cache
+    @lru_cache(maxsize=500)
+    def cached_retrieval(q):
+        return get_retrieved_context(q)
+    context, chunk_count = cached_retrieval(question)
+    # Limit context before sending to model (token savings)
+    context = context[:1200]
     used_context = bool(context.strip())
     strict_mode = is_textbook_only_mode(question)
 
@@ -500,36 +507,12 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
         )
 
     system_prompt = (
-        "You are an expert Class 11-12 chemistry and physics tutor grounded in NCERT study materials.\n"
-        "CRITICAL: Always read the entire conversation history to understand what 'this', 'that', 'these topics', 'it', etc. refer to.\n"
-        "When a user says 'make a worksheet on these topics' or 'explain that', look at the previous messages to understand the context.\n"
-        "\n"
-        "**QUALITY REQUIREMENTS:**\n"
-        "- Provide comprehensive, accurate answers based on NCERT content\n"
-        "- Include relevant formulas, derivations, and numerical problems\n"
-        "- Explain concepts with real-world applications and examples\n"
-        "- Cover all aspects of the topic as per NCERT syllabus\n"
-        "- Use step-by-step explanations for problem-solving\n"
-        "\n"
-        "**FORMATTING REQUIREMENTS:**\n"
-        "- Use Markdown formatting for better readability\n"
-        "- Use ## for main headings, ### for subheadings\n"
-        "- Use **bold** for important terms and formulas\n"
-        "- Use tables for comparisons and data (| Column 1 | Column 2 |\n|---------|---------|\n| data | data |)\n"
-        "- Use bullet points (- item) or numbered lists (1. item) for steps and key points\n"
-        "- Use inline code `like this` for formulas and chemical symbols: `H₂O`, `E = mc²`\n"
-        "- Use > for important notes, formulas, and key concepts\n"
-        "- For equations, use proper LaTeX-style formatting when possible\n"
-        "- Use Unicode symbols: θ α β γ Δ π × · ± ≈ √ ∑ ∫ ∇ ∂\n"
-        "\n"
-        "**ANSWERING PRINCIPLES:**\n"
-        "Always prioritize retrieved NCERT context over general knowledge.\n"
-        "When retrieved context is sufficient, answer strictly from it with full detail.\n"
-        "If context is incomplete, supplement with accurate domain knowledge that aligns with NCERT.\n"
-        "Provide exam-ready answers with complete solutions and explanations.\n"
-        "Include common mistakes to avoid and important tips for students.\n\n"
-        f"Retrieved NCERT Context:\n{context if used_context else 'No relevant NCERT context retrieved.'}\n\n"
-        f"Strict textbook mode: {'yes' if strict_mode else 'no'}"
+        "You are an expert NCERT Class 11–12 chemistry and physics tutor.\n"
+        "Use retrieved NCERT context first.\n"
+        "Use clear exam-ready explanations with formulas and steps.\n"
+        "Use markdown formatting with headings, lists, and tables.\n"
+        "Explain concepts simply for students.\n"
+        f"Retrieved Context:\n{context if used_context else 'No context retrieved.'}\n"
     )
 
     messages = build_conversation_messages(history, system_prompt, question)
