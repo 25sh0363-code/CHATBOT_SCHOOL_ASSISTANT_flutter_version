@@ -36,12 +36,12 @@ RETRIEVAL_CHARS_PER_CHUNK = int(os.getenv("RETRIEVAL_CHARS_PER_CHUNK", "700"))
 RETRIEVAL_MAX_CONTEXT_CHARS = int(os.getenv("RETRIEVAL_MAX_CONTEXT_CHARS", "2800"))
 
 # Conversation history limits
-MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "2"))
-MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "400"))
+MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "3"))
+MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "500"))
 
-# Token limits (balanced quality/cost; notes need more room for chapter coverage)
+# Token limits (keep moderate to avoid high cost)
 CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "650"))
-NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1800"))
+NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1000"))
 
 
 class ChatRequest(BaseModel):
@@ -220,16 +220,16 @@ def make_math_readable(text: str) -> str:
     if not text:
         return text
 
-    # Convert common LaTeX delimiters to markdown-friendly sections.
-    text = text.replace("\\[", "\n\n**Equation:**\n").replace("\\]", "\n")
-    text = text.replace("\\(", "").replace("\\)", "")
-    text = text.replace("$$", "")
+    # Keep basic markdown formatting but make inline math readable
+    # Convert LaTeX delimiters to simpler format for mobile display
+    text = text.replace("\\[", "\n\n**Equation:**\n```\n").replace("\\]", "\n```\n\n")
+    text = text.replace("\\(", "`").replace("\\)", "`")
     
     # Simplify common LaTeX commands for readability
     text = re.sub(r"\\sqrt\{([^}]*)\}", r"√(\1)", text)
     text = re.sub(r"\\frac\{([^}]*)\}\{([^}]*)\}", r"(\1)/(\2)", text)
     
-    # Replace Greek letters/operators with Unicode symbols.
+    # Replace Greek letters with Unicode symbols
     replacements = {
         "\\theta": "θ",
         "\\alpha": "α",
@@ -250,17 +250,9 @@ def make_math_readable(text: str) -> str:
         "\\leq": "≤",
         "\\geq": "≥",
         "\\neq": "≠",
-        "\\rightarrow": "→",
-        "\\infty": "∞",
     }
     for src, dst in replacements.items():
         text = text.replace(src, dst)
-
-    # Light cleanup for frequent TeX wrappers.
-    text = text.replace("\\left", "").replace("\\right", "")
-    text = text.replace("{", "").replace("}", "")
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"\n\s+", "\n", text)
 
     return text.strip()
 
@@ -637,7 +629,7 @@ def _extract_pdf_text(attachment: NoteAttachment) -> str:
     content = "\n\n".join(chunks).strip()
     if not content:
         return ""
-    return content[:14000]
+    return content[:7000]
 
 
 def _extract_image_text(attachment: NoteAttachment, topic: str) -> str:
@@ -668,7 +660,7 @@ def _extract_image_text(attachment: NoteAttachment, topic: str) -> str:
     )
 
     text = str(ai_message.content).strip()
-    return text[:5000]
+    return text[:3500]
 
 
 def generate_notes(
@@ -710,14 +702,12 @@ def generate_notes(
         "- Use markdown headings and subheadings.\n"
         "- Use bullet lists for key points and numbered steps where needed.\n"
         "- Include at least one markdown table when comparison/summary helps.\n"
-        "- Write equations in human-readable form (e.g., v = u + at, F = ma, (a)/(b), sqrt(x), theta, pi).\n"
         "- Preserve math/science symbols and signs (e.g., +/- <= >= != theta alpha beta delta pi mu sigma omega sqrt).\n"
-        "- Use clean Unicode symbols where useful (×, ·, ±, ≈, ≤, ≥, ≠, θ, α, β, Δ, π, μ, σ, ω, √).\n"
+        "- Use clean Unicode symbols where useful (x, dot, +- , ~=, <=, >=, !=, theta, alpha, beta, delta, pi, mu, sigma, omega, sqrt).\n"
         "- Keep spacing readable and output polished for direct study use.\n"
         "Structure output with: Overview, Key Concepts, Important Points, Formula/Examples (if relevant), and Quick Revision Checklist.\n"
-        "Cover the chapter comprehensively: include all major subtopics, definitions, formulas, examples, and common mistakes.\n"
-        "If topic is a chapter, provide a complete study set, not a short summary.\n"
-        "Prefer substance over brevity: include definitions, core logic, formulas, common mistakes, and quick revision cues when relevant.\n"
+        "Keep it concise but complete for revision.\n"
+        "Prefer substance over length: include definitions, core logic, formulas, common mistakes, and quick revision cues when relevant.\n"
         "If context from user details or attachments is present, ground the notes in that material first.\n\n"
         f"Topic: {topic.strip()}\n\n"
         f"Context:\n{context_text}"

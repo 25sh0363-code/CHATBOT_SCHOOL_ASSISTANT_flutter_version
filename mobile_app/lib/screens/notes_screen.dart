@@ -1,13 +1,9 @@
 import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
-import 'package:path_provider/path_provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
 import '../models/quick_note.dart';
@@ -37,14 +33,7 @@ class _NotesScreenState extends State<NotesScreen> {
   @override
   void initState() {
     super.initState();
-    _contentController.addListener(_onContentChanged);
     _load();
-  }
-
-  void _onContentChanged() {
-    if (mounted) {
-      setState(() {});
-    }
   }
 
   Future<void> _load() async {
@@ -116,8 +105,6 @@ class _NotesScreenState extends State<NotesScreen> {
           name: file.name,
           mimeType: _mimeTypeFromFilename(file.name),
           base64Data: base64Encode(bytes),
-          bytes: bytes,
-          originalPath: file.path,
         ),
       );
     }
@@ -174,9 +161,7 @@ class _NotesScreenState extends State<NotesScreen> {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _contentController.text = note;
-      });
+      _contentController.text = note;
     } catch (e) {
       if (!mounted) {
         return;
@@ -279,95 +264,8 @@ class _NotesScreenState extends State<NotesScreen> {
     return '$date $hour:$minute';
   }
 
-  String _prepareNoteForDisplay(String text) {
-    if (text.isEmpty) {
-      return text;
-    }
-
-    var output = text;
-    output = output.replaceAll(RegExp(r'\\\('), r'$');
-    output = output.replaceAll(RegExp(r'\\\)'), r'$');
-    output = output.replaceAll(RegExp(r'\\\['), '\n\n**Equation:**\n');
-    output = output.replaceAll(RegExp(r'\\\]'), '\n');
-    return output;
-  }
-
-  MarkdownStyleSheet _markdownStyleSheet(BuildContext context) {
-    return MarkdownStyleSheet(
-      p: Theme.of(context).textTheme.bodyMedium,
-      tableBorder: TableBorder.all(
-        color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.4),
-      ),
-      tableHead: Theme.of(context)
-          .textTheme
-          .bodyMedium
-          ?.copyWith(fontWeight: FontWeight.w700),
-      tableBody: Theme.of(context).textTheme.bodyMedium,
-      code: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            fontFamily: 'monospace',
-          ),
-    );
-  }
-
-  Future<void> _openAttachment(_SelectedAttachment file) async {
-    if (file.mimeType.startsWith('image/')) {
-      await showDialog<void>(
-        context: context,
-        builder: (context) {
-          return Dialog(
-            child: InteractiveViewer(
-              child: Image.memory(
-                Uint8List.fromList(file.bytes),
-                fit: BoxFit.contain,
-              ),
-            ),
-          );
-        },
-      );
-      return;
-    }
-
-    final path = await _resolveAttachmentPath(file);
-    if (path == null) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open this attachment.')),
-      );
-      return;
-    }
-
-    final uri = Uri.file(path);
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No app available to open this attachment.')),
-      );
-    }
-  }
-
-  Future<String?> _resolveAttachmentPath(_SelectedAttachment file) async {
-    if (file.originalPath != null && file.originalPath!.isNotEmpty) {
-      final existing = File(file.originalPath!);
-      if (await existing.exists()) {
-        return existing.path;
-      }
-    }
-
-    try {
-      final dir = await getTemporaryDirectory();
-      final target = File('${dir.path}/${DateTime.now().microsecondsSinceEpoch}_${file.name}');
-      await target.writeAsBytes(file.bytes, flush: true);
-      return target.path;
-    } catch (_) {
-      return null;
-    }
-  }
-
   @override
   void dispose() {
-    _contentController.removeListener(_onContentChanged);
     _topicController.dispose();
     _detailsController.dispose();
     _contentController.dispose();
@@ -435,14 +333,8 @@ class _NotesScreenState extends State<NotesScreen> {
                       runSpacing: 8,
                       children: _attachments
                           .map(
-                            (file) => ActionChip(
-                              avatar: Icon(
-                                file.mimeType.contains('pdf')
-                                    ? Icons.picture_as_pdf_outlined
-                                    : Icons.image_outlined,
-                              ),
+                            (file) => Chip(
                               label: Text(file.name),
-                              onPressed: () => _openAttachment(file),
                             ),
                           )
                           .toList(),
@@ -456,33 +348,6 @@ class _NotesScreenState extends State<NotesScreen> {
                       labelText: 'Generated note / manual note',
                     ),
                   ),
-                  if (_contentController.text.trim().isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      'Preview',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .outline
-                              .withValues(alpha: 0.35),
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: MarkdownBody(
-                        data: _prepareNoteForDisplay(_contentController.text),
-                        selectable: true,
-                        extensionSet: md.ExtensionSet.gitHubFlavored,
-                        styleSheet: _markdownStyleSheet(context),
-                      ),
-                    ),
-                  ],
                   const SizedBox(height: 12),
                   FilledButton(
                     onPressed: _addNote,
@@ -516,10 +381,26 @@ class _NotesScreenState extends State<NotesScreen> {
                             child: SizedBox(
                               width: MediaQuery.of(context).size.width - 64,
                               child: MarkdownBody(
-                                data: _prepareNoteForDisplay(note.content),
+                                data: note.content,
                                 selectable: true,
                                 extensionSet: md.ExtensionSet.gitHubFlavored,
-                                styleSheet: _markdownStyleSheet(context),
+                                styleSheet: MarkdownStyleSheet(
+                                  p: Theme.of(context).textTheme.bodyMedium,
+                                  tableBorder: TableBorder.all(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .outline
+                                        .withValues(alpha: 0.4),
+                                  ),
+                                  tableHead: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                  tableBody: Theme.of(context).textTheme.bodyMedium,
+                                  code: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        fontFamily: 'monospace',
+                                      ),
+                                ),
                               ),
                             ),
                           ),
@@ -553,13 +434,9 @@ class _SelectedAttachment {
     required this.name,
     required this.base64Data,
     required this.mimeType,
-    required this.bytes,
-    required this.originalPath,
   });
 
   final String name;
   final String base64Data;
   final String mimeType;
-  final List<int> bytes;
-  final String? originalPath;
 }
