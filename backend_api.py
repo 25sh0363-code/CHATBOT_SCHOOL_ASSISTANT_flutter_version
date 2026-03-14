@@ -22,25 +22,26 @@ from pydantic import BaseModel, Field
 from PyPDF2 import PdfReader
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4o-mini")
-NOTES_MODEL = os.getenv("NOTES_MODEL", "gpt-4.1-mini")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-5-mini")  # Balanced cost + quality
+NOTES_MODEL = os.getenv("NOTES_MODEL", "gpt-5-mini")  # Use same model for notes for consistency
 VISION_CHAT_MODEL = os.getenv("VISION_CHAT_MODEL", "gpt-4.1-mini")
 VECTORSTORE_DIR = Path("vectorstore/faiss_index")
 VECTORSTORE_INDEX_PATH = VECTORSTORE_DIR / "index.faiss"
 
+# Retrieval sizing controls how much context is fed into the model.
+# Larger values improve quality but increase token cost.
+RETRIEVAL_CANDIDATE_K = int(os.getenv("RETRIEVAL_CANDIDATE_K", "10"))
+RETRIEVAL_FINAL_K = int(os.getenv("RETRIEVAL_FINAL_K", "5"))
+RETRIEVAL_CHARS_PER_CHUNK = int(os.getenv("RETRIEVAL_CHARS_PER_CHUNK", "700"))
+RETRIEVAL_MAX_CONTEXT_CHARS = int(os.getenv("RETRIEVAL_MAX_CONTEXT_CHARS", "2800"))
 
-RETRIEVAL_CANDIDATE_K = int(os.getenv("RETRIEVAL_CANDIDATE_K", "6"))
-RETRIEVAL_FINAL_K = int(os.getenv("RETRIEVAL_FINAL_K", "3"))
-RETRIEVAL_CHARS_PER_CHUNK = int(os.getenv("RETRIEVAL_CHARS_PER_CHUNK", "500"))
-RETRIEVAL_MAX_CONTEXT_CHARS = int(os.getenv("RETRIEVAL_MAX_CONTEXT_CHARS", "1500"))
-
-
+# Conversation history limits
 MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "2"))
-MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "300"))
+MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "400"))
 
-
-CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "900"))
-NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1100"))
+# Token limits (balanced quality/cost; notes need more room for chapter coverage)
+CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "650"))
+NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1800"))
 
 
 class ChatRequest(BaseModel):
@@ -215,26 +216,32 @@ def ensure_local_vectorstore() -> None:
 
 
 def make_math_readable(text: str) -> str:
+    """Format math and ensure markdown compatibility."""
     if not text:
         return text
 
-    # Convert LaTeX fractions
-    text = re.sub(r"\\frac\{([^}]*)\}\{([^}]*)\}", r"(\1)/(\2)", text)
-
-    # Convert square roots
+    # Convert common LaTeX delimiters to markdown-friendly sections.
+    text = text.replace("\\[", "\n\n**Equation:**\n").replace("\\]", "\n")
+    text = text.replace("\\(", "").replace("\\)", "")
+    text = text.replace("$$", "")
+    
+    # Simplify common LaTeX commands for readability
     text = re.sub(r"\\sqrt\{([^}]*)\}", r"√(\1)", text)
-
-    # Greek letters and math symbols
+    text = re.sub(r"\\frac\{([^}]*)\}\{([^}]*)\}", r"(\1)/(\2)", text)
+    
+    # Replace Greek letters/operators with Unicode symbols.
     replacements = {
         "\\theta": "θ",
         "\\alpha": "α",
         "\\beta": "β",
         "\\gamma": "γ",
         "\\Delta": "Δ",
+        "\\delta": "δ",
         "\\pi": "π",
         "\\mu": "μ",
         "\\sigma": "σ",
         "\\omega": "ω",
+        "\\Omega": "Ω",
         "\\lambda": "λ",
         "\\times": "×",
         "\\cdot": "·",
@@ -243,10 +250,17 @@ def make_math_readable(text: str) -> str:
         "\\leq": "≤",
         "\\geq": "≥",
         "\\neq": "≠",
+        "\\rightarrow": "→",
         "\\infty": "∞",
     }
     for src, dst in replacements.items():
         text = text.replace(src, dst)
+
+    # Light cleanup for frequent TeX wrappers.
+    text = text.replace("\\left", "").replace("\\right", "")
+    text = text.replace("{", "").replace("}", "")
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\n\s+", "\n", text)
 
     return text.strip()
 
@@ -468,23 +482,13 @@ def _add_room_message(
     return message
 
 
-
-# Move the cache outside the function so it persists across requests
-@lru_cache(maxsize=500)
-def cached_retrieval(question: str):
-    return get_retrieved_context(question)
-
 def answer_question(question: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
     if history is None:
         history = []
 
     history = trim_history(history)
-
-    # Normalize the question for consistent retrieval
-    normalized_question = question.lower().strip()
-    context, chunk_count = cached_retrieval(normalized_question)
-    # Limit context before sending to model (token savings)
-    context = context[:1200]
+    
+    context, chunk_count = get_retrieved_context(question)
     used_context = bool(context.strip())
     strict_mode = is_textbook_only_mode(question)
 
@@ -496,37 +500,45 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
         )
 
     system_prompt = (
-        "You are an expert NCERT Class 11–12 physics and chemistry tutor.\n\n"
-        "Formatting rules:\n"
-        "- Use **Markdown formatting**\n"
-        "- Use headings (##, ###)\n"
-        "- Use bullet lists\n"
-        "- Show formulas clearly\n"
-        "- Use emojis sparingly for clarity\n\n"
-        "Math rules:\n"
-        "- Write formulas clearly\n"
-        "- Use symbols like θ α β Δ π √ × ± ≤ ≥\n"
-        "- Show step-by-step derivations\n\n"
-        "Teaching style:\n"
-        "- Explain simply like a good teacher\n"
-        "- Break answers into sections\n"
-        "- Use examples when useful\n\n"
-        "Use emojis when helpful:\n"
-        "📘 concept\n🧠 idea\n⚡ formula\n📌 important\n\n"
-        f"Retrieved Context:\n{context if used_context else 'No context retrieved.'}"
+        "You are an expert Class 11-12 chemistry and physics tutor grounded in NCERT study materials.\n"
+        "CRITICAL: Always read the entire conversation history to understand what 'this', 'that', 'these topics', 'it', etc. refer to.\n"
+        "When a user says 'make a worksheet on these topics' or 'explain that', look at the previous messages to understand the context.\n"
+        "\n"
+        "**QUALITY REQUIREMENTS:**\n"
+        "- Provide comprehensive, accurate answers based on NCERT content\n"
+        "- Include relevant formulas, derivations, and numerical problems\n"
+        "- Explain concepts with real-world applications and examples\n"
+        "- Cover all aspects of the topic as per NCERT syllabus\n"
+        "- Use step-by-step explanations for problem-solving\n"
+        "\n"
+        "**FORMATTING REQUIREMENTS:**\n"
+        "- Use Markdown formatting for better readability\n"
+        "- Use ## for main headings, ### for subheadings\n"
+        "- Use **bold** for important terms and formulas\n"
+        "- Use tables for comparisons and data (| Column 1 | Column 2 |\n|---------|---------|\n| data | data |)\n"
+        "- Use bullet points (- item) or numbered lists (1. item) for steps and key points\n"
+        "- Use inline code `like this` for formulas and chemical symbols: `H₂O`, `E = mc²`\n"
+        "- Use > for important notes, formulas, and key concepts\n"
+        "- For equations, use proper LaTeX-style formatting when possible\n"
+        "- Use Unicode symbols: θ α β γ Δ π × · ± ≈ √ ∑ ∫ ∇ ∂\n"
+        "\n"
+        "**ANSWERING PRINCIPLES:**\n"
+        "Always prioritize retrieved NCERT context over general knowledge.\n"
+        "When retrieved context is sufficient, answer strictly from it with full detail.\n"
+        "If context is incomplete, supplement with accurate domain knowledge that aligns with NCERT.\n"
+        "Provide exam-ready answers with complete solutions and explanations.\n"
+        "Include common mistakes to avoid and important tips for students.\n\n"
+        f"Retrieved NCERT Context:\n{context if used_context else 'No relevant NCERT context retrieved.'}\n\n"
+        f"Strict textbook mode: {'yes' if strict_mode else 'no'}"
     )
 
-    # Add a formatting hint to the question
-    question = question + "\n\nFormat the answer clearly for a student."
     messages = build_conversation_messages(history, system_prompt, question)
 
-    llm = ChatOpenAI(model_name=CHAT_MODEL, temperature=0.1, max_tokens=CHAT_MAX_TOKENS)
+    llm = ChatOpenAI(model_name=CHAT_MODEL, temperature=0, max_tokens=CHAT_MAX_TOKENS)
     result = llm.invoke(messages)
 
     answer = make_math_readable(str(result.content).strip())
     answer = strip_source_citations(answer)
-    # Replace HTML <br> tags with newlines for markdown compatibility
-    answer = answer.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
 
     return ChatResponse(
         answer=answer,
@@ -605,8 +617,6 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
 
     answer = make_math_readable(str(ai_message.content).strip())
     answer = strip_source_citations(answer)
-    # Replace HTML <br> tags with newlines for markdown compatibility
-    answer = answer.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
 
     return ChatResponse(
         answer=answer,
