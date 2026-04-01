@@ -517,21 +517,32 @@ class _NotesScreenState extends State<NotesScreen> {
                                 p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
                                 h1: Theme.of(context).textTheme.titleLarge?.copyWith(
                                   fontWeight: FontWeight.w700,
-                                  fontSize: 20,
+                                  fontSize: 22,
                                   height: 1.3,
+                                  color: Color(0xFF1E88E5),
                                 ),
                                 h2: Theme.of(context).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 16,
+                                  fontSize: 18,
                                   height: 1.4,
+                                  color: Color(0xFF43A047),
                                 ),
                                 h3: Theme.of(context).textTheme.titleSmall?.copyWith(
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 14,
+                                  fontSize: 15,
                                   height: 1.4,
+                                  color: Color(0xFFFF6F00),
                                 ),
                                 listBullet: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
-                                blockSpacing: 12,
+                                blockSpacing: 14,
+                                em: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                  fontStyle: FontStyle.italic,
+                                  color: Color(0xFFC62828),
+                                ),
+                                strong: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF6A1B9A),
+                                ),
                               ),
                             ),
                     )
@@ -580,21 +591,24 @@ class _NotesScreenState extends State<NotesScreen> {
                               p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
                               h1: Theme.of(context).textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.w700,
-                                fontSize: 20,
+                                fontSize: 22,
                                 height: 1.3,
+                                color: Color(0xFF1E88E5),
                               ),
                               h2: Theme.of(context).textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 16,
+                                fontSize: 18,
                                 height: 1.4,
+                                color: Color(0xFF43A047),
                               ),
                               h3: Theme.of(context).textTheme.titleSmall?.copyWith(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 14,
+                                fontSize: 15,
                                 height: 1.4,
+                                color: Color(0xFFFF6F00),
                               ),
                               listBullet: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
-                              blockSpacing: 12,
+                              blockSpacing: 14,
                               tableBorder: TableBorder.all(
                                 color: Theme.of(context)
                                     .colorScheme
@@ -609,7 +623,16 @@ class _NotesScreenState extends State<NotesScreen> {
                               code: Theme.of(context).textTheme.bodyLarge?.copyWith(
                                     fontFamily: 'monospace',
                                     height: 1.4,
+                                    backgroundColor: Color(0xFFF5F5F5),
                                   ),
+                              em: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                fontStyle: FontStyle.italic,
+                                color: Color(0xFFC62828),
+                              ),
+                              strong: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF6A1B9A),
+                              ),
                             ),
                           ),
                           const SizedBox(height: 8),
