@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
@@ -525,14 +529,23 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
       return;
     }
     _messageController.clear();
-    await widget.collabApi.sendMessage(
-      roomId: widget.room.id,
-      userEmail: widget.user.email,
-      userName: widget.user.name,
-      text: text,
-    );
-    await _loadMessages(silent: true);
-    _scrollToBottom();
+    try {
+      await widget.collabApi.sendMessage(
+        roomId: widget.room.id,
+        userEmail: widget.user.email,
+        userName: widget.user.name,
+        text: text,
+      );
+      await _loadMessages(silent: true);
+      _scrollToBottom();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not send message: $e')),
+      );
+    }
   }
 
   Future<void> _shareNote() async {
@@ -552,13 +565,22 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
       return;
     }
 
-    await widget.collabApi.shareNote(
-      roomId: widget.room.id,
-      userEmail: widget.user.email,
-      userName: widget.user.name,
-      note: note,
-    );
-    await _loadMessages(silent: true);
+    try {
+      await widget.collabApi.shareNote(
+        roomId: widget.room.id,
+        userEmail: widget.user.email,
+        userName: widget.user.name,
+        note: note,
+      );
+      await _loadMessages(silent: true);
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not share note: $e')),
+      );
+    }
   }
 
   Future<void> _shareWorksheet() async {
@@ -578,13 +600,97 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
       return;
     }
 
-    await widget.collabApi.shareWorksheet(
-      roomId: widget.room.id,
-      userEmail: widget.user.email,
-      userName: widget.user.name,
-      worksheet: worksheet,
-    );
-    await _loadMessages(silent: true);
+    try {
+      await widget.collabApi.shareWorksheet(
+        roomId: widget.room.id,
+        userEmail: widget.user.email,
+        userName: widget.user.name,
+        worksheet: worksheet,
+      );
+      await _loadMessages(silent: true);
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not share worksheet: $e')),
+      );
+    }
+  }
+
+  List<QuickNoteAttachment> _noteAttachmentsFromPayload(CollabMessage message) {
+    return (message.payload['attachments'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (item) => QuickNoteAttachment(
+            name: item['name']?.toString() ?? '',
+            base64Data: item['base64_data']?.toString() ?? '',
+            mimeType:
+                item['mime_type']?.toString() ?? 'application/octet-stream',
+          ),
+        )
+        .where((item) => item.name.isNotEmpty && item.base64Data.isNotEmpty)
+        .toList();
+  }
+
+  Future<File> _materializeAttachment(
+    String sourceId,
+    QuickNoteAttachment attachment,
+  ) async {
+    final cacheDir = await getTemporaryDirectory();
+    final root = Directory('${cacheDir.path}/collab_note_files');
+    if (!await root.exists()) {
+      await root.create(recursive: true);
+    }
+
+    final safeName = attachment.name
+        .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+    final file = File('${root.path}/${sourceId}_$safeName');
+    if (!await file.exists()) {
+      final bytes = base64Decode(attachment.base64Data);
+      await file.writeAsBytes(bytes, flush: true);
+    }
+    return file;
+  }
+
+  Future<void> _openSharedAttachment(
+    CollabMessage message,
+    QuickNoteAttachment attachment,
+  ) async {
+    try {
+      final file = await _materializeAttachment(message.id, attachment);
+      final result = await OpenFilex.open(file.path, type: attachment.mimeType);
+      if (!mounted) {
+        return;
+      }
+      if (result.type != ResultType.done) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open file: ${attachment.name}')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open file: ${attachment.name}')),
+      );
+    }
+  }
+
+  IconData _iconForMimeType(String mimeType) {
+    final mime = mimeType.toLowerCase();
+    if (mime.contains('pdf')) {
+      return Icons.picture_as_pdf_outlined;
+    }
+    if (mime.startsWith('image/')) {
+      return Icons.image_outlined;
+    }
+    if (mime.contains('word') || mime.contains('document') || mime.contains('text')) {
+      return Icons.description_outlined;
+    }
+    return Icons.attach_file_outlined;
   }
 
   Future<void> _setMeetLink() async {
@@ -737,6 +843,7 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
   Future<void> _saveSharedNote(CollabMessage message) async {
     final topic = message.payload['topic']?.toString().trim() ?? '';
     final content = message.payload['content']?.toString().trim() ?? '';
+    final attachments = _noteAttachmentsFromPayload(message);
     if (topic.isEmpty || content.isEmpty) {
       return;
     }
@@ -748,7 +855,10 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
     final now = DateTime.now();
 
     if (existingIndex >= 0) {
-      notes[existingIndex] = notes[existingIndex].copyWith(updatedAt: now);
+      notes[existingIndex] = notes[existingIndex].copyWith(
+        updatedAt: now,
+        attachments: attachments,
+      );
     } else {
       notes.insert(
         0,
@@ -758,6 +868,7 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
           content: content,
           createdAt: now,
           updatedAt: now,
+          attachments: attachments,
         ),
       );
     }
@@ -1049,6 +1160,7 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
     if (message.messageType == 'note') {
       final topic = message.payload['topic']?.toString() ?? 'Note';
       final content = message.payload['content']?.toString() ?? '';
+      final attachments = _noteAttachmentsFromPayload(message);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -1059,6 +1171,25 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
           ),
           const SizedBox(height: 4),
           Text(_notePreview(content)),
+          if (attachments.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: attachments
+                  .map(
+                    (attachment) => ActionChip(
+                      avatar: Icon(
+                        _iconForMimeType(attachment.mimeType),
+                        size: 16,
+                      ),
+                      label: Text(attachment.name),
+                      onPressed: () => _openSharedAttachment(message, attachment),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
         ],
       );
     }

@@ -1,6 +1,6 @@
-import os
 import base64
 import io
+import os
 import re
 import tempfile
 import threading
@@ -40,8 +40,14 @@ MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "3"))
 MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "500"))
 
 # Token limits (keep moderate to avoid high cost)
-CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "650"))
+CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "1200"))
 NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1000"))
+VISION_CHAT_MAX_TOKENS = int(os.getenv("VISION_CHAT_MAX_TOKENS", "900"))
+
+# Notes context shaping controls attachment-heavy token growth.
+NOTES_MAX_DETAILS_CHARS = int(os.getenv("NOTES_MAX_DETAILS_CHARS", "1800"))
+NOTES_MAX_ATTACHMENT_CHARS_PER_FILE = int(os.getenv("NOTES_MAX_ATTACHMENT_CHARS_PER_FILE", "2500"))
+NOTES_MAX_TOTAL_ATTACHMENT_CHARS = int(os.getenv("NOTES_MAX_TOTAL_ATTACHMENT_CHARS", "8000"))
 
 
 class ChatRequest(BaseModel):
@@ -121,6 +127,7 @@ class CollabShareNoteRequest(BaseModel):
     user_name: str = Field(min_length=1, max_length=120)
     topic: str = Field(min_length=1, max_length=240)
     content: str = Field(min_length=1, max_length=12000)
+    attachments: list[NoteAttachment] = Field(default_factory=list)
 
 
 class CollabShareWorksheetRequest(BaseModel):
@@ -220,16 +227,24 @@ def make_math_readable(text: str) -> str:
     if not text:
         return text
 
-    # Keep basic markdown formatting but make inline math readable
-    # Convert LaTeX delimiters to simpler format for mobile display
-    text = text.replace("\\[", "\n\n**Equation:**\n```\n").replace("\\]", "\n```\n\n")
-    text = text.replace("\\(", "`").replace("\\)", "`")
-    
-    # Simplify common LaTeX commands for readability
-    text = re.sub(r"\\sqrt\{([^}]*)\}", r"√(\1)", text)
-    text = re.sub(r"\\frac\{([^}]*)\}\{([^}]*)\}", r"(\1)/(\2)", text)
-    
-    # Replace Greek letters with Unicode symbols
+    # Convert display/inline LaTeX delimiters to readable math lines.
+    text = re.sub(r"\\\[\s*(.*?)\s*\\\]", r"\n\nEquation: \1\n", text, flags=re.DOTALL)
+    text = re.sub(r"\$\$\s*(.*?)\s*\$\$", r"\n\nEquation: \1\n", text, flags=re.DOTALL)
+    text = re.sub(r"\\\((.*?)\\\)", r"\1", text, flags=re.DOTALL)
+
+    # Simplify common LaTeX constructs.
+    text = re.sub(r"\\sqrt\{([^{}]+)\}", r"sqrt(\1)", text)
+    text = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"(\1)/(\2)", text)
+    text = re.sub(r"\{([^{}]+)\}\^\{([^{}]+)\}", r"\1^\2", text)
+    text = re.sub(r"\{([^{}]+)\}_\{([^{}]+)\}", r"\1_\2", text)
+    text = re.sub(r"([A-Za-z0-9])\^\{([^{}]+)\}", r"\1^\2", text)
+    text = re.sub(r"([A-Za-z0-9])_\{([^{}]+)\}", r"\1_\2", text)
+
+    # Unwrap common LaTeX text wrappers.
+    text = re.sub(r"\\mathrm\{([^{}]+)\}", r"\1", text)
+    text = re.sub(r"\\text\{([^{}]+)\}", r"\1", text)
+
+    # Replace Greek letters and math symbols with Unicode.
     replacements = {
         "\\theta": "θ",
         "\\alpha": "α",
@@ -254,6 +269,16 @@ def make_math_readable(text: str) -> str:
     for src, dst in replacements.items():
         text = text.replace(src, dst)
 
+    # Remove escape slashes before plain symbols and punctuation.
+    text = re.sub(r"\\([=+\-*/()\[\]{}])", r"\1", text)
+
+    # Drop leftover standalone LaTeX commands while keeping their content where possible.
+    text = re.sub(r"\\[a-zA-Z]+\s*", "", text)
+
+    # Cleanup repeated whitespace/newlines introduced by replacements.
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+
     return text.strip()
 
 
@@ -270,6 +295,119 @@ def is_textbook_only_mode(question: str) -> bool:
         "ncert only",
     ]
     return any(trigger in lowered for trigger in triggers)
+
+
+def _response_style_instructions(question: str) -> str:
+    q = question.strip().lower()
+    short_q_prefixes = (
+        "what is",
+        "define",
+        "state",
+        "name",
+        "who is",
+        "when is",
+        "where is",
+    )
+
+    if q.startswith(short_q_prefixes):
+        return (
+            "Question type: direct factual question. "
+            "Answer in 2-5 lines only. Start with the exact answer, then one short supporting line. "
+            "Do not add full-topic explanation unless explicitly asked."
+        )
+
+    if any(token in q for token in ("mcq", "option", "choose the correct", "a)", "b)", "c)", "d)")):
+        return (
+            "Question type: MCQ/objective. "
+            "Return only: Correct option + 1-2 line reason."
+        )
+
+    if any(token in q for token in ("solve", "calculate", "numerical", "find", "evaluate")):
+        return (
+            "Question type: numerical/problem solving. "
+            "Return a compact step-by-step solution: Given, Formula, Substitution, Final Answer. "
+            "Keep steps concise."
+        )
+
+    if any(token in q for token in ("difference", "compare", "vs", "distinguish")):
+        return (
+            "Question type: comparison. "
+            "Prefer a short markdown table with only the key differences."
+        )
+
+    if any(token in q for token in ("explain", "why", "how", "derive", "in detail", "detailed")):
+        return (
+            "Question type: explanatory. "
+            "Give a complete but focused explanation with headings and examples."
+        )
+
+    return (
+        "Question type: standard query. "
+        "Answer directly and briefly first (3-6 lines), then add only essential supporting points."
+    )
+
+
+def _is_short_direct_question(question: str) -> bool:
+    q = question.strip().lower()
+    prefixes = (
+        "what is",
+        "define",
+        "state",
+        "name",
+        "who is",
+        "when is",
+        "where is",
+    )
+    return len(q) <= 120 or q.startswith(prefixes)
+
+
+def _is_complex_question(question: str) -> bool:
+    q = question.strip().lower()
+    complex_signals = (
+        "derive",
+        "derivation",
+        "prove",
+        "numerical",
+        "calculate",
+        "multi-step",
+        "in detail",
+        "mechanism",
+        "reaction pathway",
+        "explain why",
+        "compare and contrast",
+    )
+    return len(q) > 180 or any(token in q for token in complex_signals)
+
+
+def _adaptive_chat_budget(question: str) -> dict[str, int]:
+    if _is_complex_question(question):
+        return {
+            "candidate_k": max(RETRIEVAL_CANDIDATE_K, 10),
+            "final_k": max(RETRIEVAL_FINAL_K, 5),
+            "chars_per_chunk": max(RETRIEVAL_CHARS_PER_CHUNK, 700),
+            "max_context_chars": max(RETRIEVAL_MAX_CONTEXT_CHARS, 2800),
+            "max_tokens": CHAT_MAX_TOKENS,
+            "history_messages": max(MAX_HISTORY_MESSAGES, 3),
+        }
+
+    if _is_short_direct_question(question):
+        return {
+            "candidate_k": min(RETRIEVAL_CANDIDATE_K, 6),
+            "final_k": min(RETRIEVAL_FINAL_K, 3),
+            "chars_per_chunk": min(RETRIEVAL_CHARS_PER_CHUNK, 420),
+            "max_context_chars": min(RETRIEVAL_MAX_CONTEXT_CHARS, 1300),
+            "max_tokens": min(CHAT_MAX_TOKENS, 420),
+            "history_messages": min(MAX_HISTORY_MESSAGES, 2),
+        }
+
+    return {
+        "candidate_k": min(max(RETRIEVAL_CANDIDATE_K, 8), 10),
+        "final_k": min(max(RETRIEVAL_FINAL_K, 4), 5),
+        "chars_per_chunk": min(max(RETRIEVAL_CHARS_PER_CHUNK, 550), 700),
+        "max_context_chars": min(max(RETRIEVAL_MAX_CONTEXT_CHARS, 2000), 2600),
+        "max_tokens": min(max(CHAT_MAX_TOKENS, 700), 900),
+        "history_messages": min(max(MAX_HISTORY_MESSAGES, 2), 3),
+    }
 
 
 def _keyword_set(text: str) -> set[str]:
@@ -295,18 +433,25 @@ def _rank_docs_by_question(question: str, docs_with_scores: list[tuple[Any, floa
     return [doc for _, _, doc in ranked]
 
 
-def get_retrieved_context(question: str) -> tuple[str, int]:
+def get_retrieved_context(
+    question: str,
+    *,
+    candidate_k: int,
+    final_k: int,
+    chars_per_chunk: int,
+    max_context_chars: int,
+) -> tuple[str, int]:
     vector_store = get_vector_store()
     docs_with_scores = vector_store.similarity_search_with_score(
         question,
-        k=max(RETRIEVAL_CANDIDATE_K, RETRIEVAL_FINAL_K),
+        k=max(candidate_k, final_k),
     )
 
     if not docs_with_scores:
         return "", 0
 
     ranked_docs = _rank_docs_by_question(question, docs_with_scores)
-    docs = ranked_docs[:RETRIEVAL_FINAL_K]
+    docs = ranked_docs[:final_k]
 
     if not docs:
         return "", 0
@@ -314,12 +459,12 @@ def get_retrieved_context(question: str) -> tuple[str, int]:
     context_parts: list[str] = []
     total_chars = 0
     for doc in docs:
-        snippet = (getattr(doc, "page_content", "") or "")[:RETRIEVAL_CHARS_PER_CHUNK]
+        snippet = (getattr(doc, "page_content", "") or "")[:chars_per_chunk]
         snippet = snippet.strip()
         if not snippet:
             continue
 
-        remaining_chars = RETRIEVAL_MAX_CONTEXT_CHARS - total_chars
+        remaining_chars = max_context_chars - total_chars
         if remaining_chars <= 0:
             break
 
@@ -331,6 +476,42 @@ def get_retrieved_context(question: str) -> tuple[str, int]:
         total_chars += len(snippet)
 
     return "\n\n".join(context_parts), len(context_parts)
+
+
+@lru_cache(maxsize=2048)
+def _cached_retrieved_context(
+    normalized_question: str,
+    candidate_k: int,
+    final_k: int,
+    chars_per_chunk: int,
+    max_context_chars: int,
+) -> tuple[str, int]:
+    return get_retrieved_context(
+        normalized_question,
+        candidate_k=candidate_k,
+        final_k=final_k,
+        chars_per_chunk=chars_per_chunk,
+        max_context_chars=max_context_chars,
+    )
+
+
+@lru_cache(maxsize=16)
+def _chat_llm(model_name: str, max_tokens: int, temperature: float) -> ChatOpenAI:
+    return ChatOpenAI(model_name=model_name, temperature=temperature, max_tokens=max_tokens)
+
+
+def _compact_system_prompt(*, context: str, strict_mode: bool, response_style: str) -> str:
+    context_block = context if context else "No relevant NCERT context retrieved."
+    return (
+        "You are an NCERT-aligned Class 11-12 Chemistry and Physics tutor.\n"
+        "Use retrieved context first. Keep answers accurate, exam-relevant, and concise unless asked for detail.\n"
+        "If pronouns like this/that/these appear, resolve using chat history.\n"
+        "For formulas/steps, prefer clean markdown and compact structure.\n"
+        "If strict textbook mode is yes, do not add outside facts.\n\n"
+        f"Response style rule: {response_style}\n"
+        f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n\n"
+        f"Retrieved NCERT Context:\n{context_block}"
+    )
 
 
 def strip_source_citations(text: str) -> str:
@@ -478,9 +659,17 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
     if history is None:
         history = []
 
-    history = trim_history(history)
-    
-    context, chunk_count = get_retrieved_context(question)
+    budget = _adaptive_chat_budget(question)
+    history = trim_history(history)[-budget["history_messages"] :]
+
+    normalized_question = " ".join(question.strip().lower().split())
+    context, chunk_count = _cached_retrieved_context(
+        normalized_question,
+        budget["candidate_k"],
+        budget["final_k"],
+        budget["chars_per_chunk"],
+        budget["max_context_chars"],
+    )
     used_context = bool(context.strip())
     strict_mode = is_textbook_only_mode(question)
 
@@ -491,42 +680,17 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
             context_chunks=0,
         )
 
-    system_prompt = (
-        "You are an expert Class 11-12 chemistry and physics tutor grounded in NCERT study materials.\n"
-        "CRITICAL: Always read the entire conversation history to understand what 'this', 'that', 'these topics', 'it', etc. refer to.\n"
-        "When a user says 'make a worksheet on these topics' or 'explain that', look at the previous messages to understand the context.\n"
-        "\n"
-        "**QUALITY REQUIREMENTS:**\n"
-        "- Provide comprehensive, accurate answers based on NCERT content\n"
-        "- Include relevant formulas, derivations, and numerical problems\n"
-        "- Explain concepts with real-world applications and examples\n"
-        "- Cover all aspects of the topic as per NCERT syllabus\n"
-        "- Use step-by-step explanations for problem-solving\n"
-        "\n"
-        "**FORMATTING REQUIREMENTS:**\n"
-        "- Use Markdown formatting for better readability\n"
-        "- Use ## for main headings, ### for subheadings\n"
-        "- Use **bold** for important terms and formulas\n"
-        "- Use tables for comparisons and data (| Column 1 | Column 2 |\n|---------|---------|\n| data | data |)\n"
-        "- Use bullet points (- item) or numbered lists (1. item) for steps and key points\n"
-        "- Use inline code `like this` for formulas and chemical symbols: `H₂O`, `E = mc²`\n"
-        "- Use > for important notes, formulas, and key concepts\n"
-        "- For equations, use proper LaTeX-style formatting when possible\n"
-        "- Use Unicode symbols: θ α β γ Δ π × · ± ≈ √ ∑ ∫ ∇ ∂\n"
-        "\n"
-        "**ANSWERING PRINCIPLES:**\n"
-        "Always prioritize retrieved NCERT context over general knowledge.\n"
-        "When retrieved context is sufficient, answer strictly from it with full detail.\n"
-        "If context is incomplete, supplement with accurate domain knowledge that aligns with NCERT.\n"
-        "Provide exam-ready answers with complete solutions and explanations.\n"
-        "Include common mistakes to avoid and important tips for students.\n\n"
-        f"Retrieved NCERT Context:\n{context if used_context else 'No relevant NCERT context retrieved.'}\n\n"
-        f"Strict textbook mode: {'yes' if strict_mode else 'no'}"
+    response_style = _response_style_instructions(question)
+
+    system_prompt = _compact_system_prompt(
+        context=context if used_context else "",
+        strict_mode=strict_mode,
+        response_style=response_style,
     )
 
     messages = build_conversation_messages(history, system_prompt, question)
 
-    llm = ChatOpenAI(model_name=CHAT_MODEL, temperature=0, max_tokens=CHAT_MAX_TOKENS)
+    llm = _chat_llm(CHAT_MODEL, budget["max_tokens"], 0.0)
     result = llm.invoke(messages)
 
     answer = make_math_readable(str(result.content).strip())
@@ -543,9 +707,17 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
     if history is None:
         history = []
 
-    history = trim_history(history)
-    
-    context, chunk_count = get_retrieved_context(question)
+    budget = _adaptive_chat_budget(question)
+    history = trim_history(history)[-budget["history_messages"] :]
+
+    normalized_question = " ".join(question.strip().lower().split())
+    context, chunk_count = _cached_retrieved_context(
+        normalized_question,
+        budget["candidate_k"],
+        budget["final_k"],
+        budget["chars_per_chunk"],
+        budget["max_context_chars"],
+    )
     used_context = bool(context.strip())
     strict_mode = is_textbook_only_mode(question)
 
@@ -556,24 +728,14 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
             context_chunks=0,
         )
 
+    response_style = _response_style_instructions(question)
+
     prompt_text = (
         "You are an expert chemistry and physics tutor. Analyze the attached image and answer the question.\n"
-        "CRITICAL: Read the conversation history below to understand what 'this', 'that', 'these', 'it' refer to in the question.\n"
-        "\n"
-        "**FORMATTING REQUIREMENTS:**\n"
-        "- Use Markdown formatting for better readability\n"
-        "- Use ## for main headings, ### for subheadings\n"
-        "- Use **bold** for important terms\n"
-        "- Use tables for comparisons\n"
-        "- Use bullet points or numbered lists for steps\n"
-        "- Use inline code `like this` for formulas\n"
-        "- For equations, use readable format with Unicode symbols: F = ma, E = mc², PV = nRT\n"
-        "- Use symbols: θ α β γ Δ π × · ± ≈ √\n"
-        "\n"
-        "Use retrieved context first where applicable.\n"
-        "If image + context are insufficient and strict textbook mode is NOT requested, complete with careful domain knowledge.\n"
-        "If strict textbook mode is requested, do not add outside facts.\n"
-        "Interpret formulas/graphs/diagrams clearly.\n\n"
+        "Use retrieved context first where applicable and stay NCERT-aligned.\n"
+        "Interpret formulas/graphs/diagrams clearly.\n"
+        "Use markdown when helpful but keep concise for direct questions.\n\n"
+        f"Response style rule: {response_style}\n"
         f"Retrieved context:\n{context if used_context else 'No additional context retrieved.'}\n\n"
         f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n"
     )
@@ -592,7 +754,7 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
     # Validate base64 early to return clean client error for malformed payloads.
     base64.b64decode(image_base64, validate=True)
 
-    vision_llm = ChatOpenAI(model_name=VISION_CHAT_MODEL, temperature=0)
+    vision_llm = _chat_llm(VISION_CHAT_MODEL, min(VISION_CHAT_MAX_TOKENS, budget["max_tokens"] + 200), 0.0)
     ai_message = vision_llm.invoke(
         [
             HumanMessage(
@@ -629,7 +791,7 @@ def _extract_pdf_text(attachment: NoteAttachment) -> str:
     content = "\n\n".join(chunks).strip()
     if not content:
         return ""
-    return content[:7000]
+    return content[:NOTES_MAX_ATTACHMENT_CHARS_PER_FILE]
 
 
 def _extract_image_text(attachment: NoteAttachment, topic: str) -> str:
@@ -669,6 +831,7 @@ def generate_notes(
     attachments: list[NoteAttachment],
 ) -> NotesGenerationResponse:
     extracted_sections: list[str] = []
+    total_attachment_chars = 0
 
     for attachment in attachments:
         mime = attachment.mime_type.lower().strip()
@@ -682,20 +845,26 @@ def generate_notes(
         else:
             continue
 
-        if section_text.strip():
-            extracted_sections.append(
-                f"Source: {name}\n{section_text.strip()}"
-            )
+        cleaned = section_text.strip()
+        if cleaned:
+            remaining = NOTES_MAX_TOTAL_ATTACHMENT_CHARS - total_attachment_chars
+            if remaining <= 0:
+                break
+            if len(cleaned) > remaining:
+                cleaned = cleaned[:remaining].rstrip()
+
+            extracted_sections.append(f"Source: {name}\n{cleaned}")
+            total_attachment_chars += len(cleaned)
 
     context_blocks: list[str] = []
     if details.strip():
-        context_blocks.append(f"User details:\n{details.strip()}")
+        context_blocks.append(f"User details:\n{details.strip()[:NOTES_MAX_DETAILS_CHARS]}")
     if extracted_sections:
         context_blocks.append("Extracted content from files/images:\n" + "\n\n".join(extracted_sections))
 
     context_text = "\n\n".join(context_blocks) if context_blocks else "No extra context provided."
 
-    llm = ChatOpenAI(model_name=NOTES_MODEL, temperature=0.2, max_tokens=NOTES_MAX_TOKENS)
+    llm = _chat_llm(NOTES_MODEL, NOTES_MAX_TOKENS, 0.2)
     prompt = (
         "You are a school note generator. Write clear, exam-ready notes in markdown.\n"
         "Formatting rules:\n"
@@ -1050,6 +1219,14 @@ def collab_share_note(room_id: str, payload: CollabShareNoteRequest) -> dict[str
             {
                 "topic": payload.topic.strip(),
                 "content": payload.content.strip(),
+                "attachments": [
+                    {
+                        "name": item.name.strip(),
+                        "base64_data": item.base64_data,
+                        "mime_type": item.mime_type.strip(),
+                    }
+                    for item in payload.attachments
+                ],
             },
         )
 

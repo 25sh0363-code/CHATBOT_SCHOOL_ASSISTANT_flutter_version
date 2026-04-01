@@ -201,6 +201,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.86;
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -251,7 +252,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: Container(
                           margin: const EdgeInsets.symmetric(vertical: 4),
                           padding: const EdgeInsets.all(10),
-                          constraints: const BoxConstraints(maxWidth: 320),
+                          constraints: BoxConstraints(
+                            maxWidth: maxBubbleWidth.clamp(280.0, 720.0),
+                          ),
                           decoration: BoxDecoration(
                             color: bgColor,
                             borderRadius: BorderRadius.circular(10),

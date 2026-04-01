@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../config/app_config.dart';
 import '../models/quick_note.dart';
@@ -64,6 +67,15 @@ class _NotesScreenState extends State<NotesScreen> {
       content: content,
       createdAt: now,
       updatedAt: now,
+      attachments: _attachments
+          .map(
+            (item) => QuickNoteAttachment(
+              name: item.name,
+              base64Data: item.base64Data,
+              mimeType: item.mimeType,
+            ),
+          )
+          .toList(),
     );
 
     setState(() {
@@ -86,7 +98,16 @@ class _NotesScreenState extends State<NotesScreen> {
 
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
+      allowedExtensions: const [
+        'pdf',
+        'png',
+        'jpg',
+        'jpeg',
+        'webp',
+        'doc',
+        'docx',
+        'txt',
+      ],
       allowMultiple: true,
       withData: true,
     );
@@ -131,7 +152,73 @@ class _NotesScreenState extends State<NotesScreen> {
     if (lower.endsWith('.webp')) {
       return 'image/webp';
     }
+    if (lower.endsWith('.doc')) {
+      return 'application/msword';
+    }
+    if (lower.endsWith('.docx')) {
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    }
+    if (lower.endsWith('.txt')) {
+      return 'text/plain';
+    }
     return 'image/jpeg';
+  }
+
+  IconData _iconForMimeType(String mimeType) {
+    final mime = mimeType.toLowerCase();
+    if (mime.contains('pdf')) {
+      return Icons.picture_as_pdf_outlined;
+    }
+    if (mime.startsWith('image/')) {
+      return Icons.image_outlined;
+    }
+    if (mime.contains('word') || mime.contains('document') || mime.contains('text')) {
+      return Icons.description_outlined;
+    }
+    return Icons.attach_file_outlined;
+  }
+
+  Future<File> _materializeAttachment(
+    String noteId,
+    QuickNoteAttachment attachment,
+  ) async {
+    final cacheDir = await getTemporaryDirectory();
+    final root = Directory('${cacheDir.path}/quick_note_files');
+    if (!await root.exists()) {
+      await root.create(recursive: true);
+    }
+
+    final safeName = attachment.name
+        .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+    final file = File('${root.path}/${noteId}_$safeName');
+    if (!await file.exists()) {
+      final bytes = base64Decode(attachment.base64Data);
+      await file.writeAsBytes(bytes, flush: true);
+    }
+    return file;
+  }
+
+  Future<void> _openAttachment(QuickNote note, QuickNoteAttachment attachment) async {
+    try {
+      final file = await _materializeAttachment(note.id, attachment);
+      final result = await OpenFilex.open(file.path, type: attachment.mimeType);
+      if (!mounted) {
+        return;
+      }
+      if (result.type != ResultType.done) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open file: ${attachment.name}')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open file: ${attachment.name}')),
+      );
+    }
   }
 
   Future<void> _generateNote() async {
@@ -308,7 +395,7 @@ class _NotesScreenState extends State<NotesScreen> {
                       OutlinedButton.icon(
                         onPressed: _pickAttachments,
                         icon: const Icon(Icons.attach_file_outlined),
-                        label: const Text('Add PDF/Image'),
+                        label: const Text('Add Files'),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -405,6 +492,25 @@ class _NotesScreenState extends State<NotesScreen> {
                             ),
                           ),
                           const SizedBox(height: 8),
+                          if (note.attachments.isNotEmpty) ...[
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: note.attachments
+                                  .map(
+                                    (attachment) => ActionChip(
+                                      avatar: Icon(
+                                        _iconForMimeType(attachment.mimeType),
+                                        size: 16,
+                                      ),
+                                      label: Text(attachment.name),
+                                      onPressed: () => _openAttachment(note, attachment),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [

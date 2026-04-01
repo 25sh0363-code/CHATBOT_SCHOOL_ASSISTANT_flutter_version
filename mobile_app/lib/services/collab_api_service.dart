@@ -189,6 +189,13 @@ class CollabApiService {
         'user_name': userName,
         'topic': note.topic,
         'content': note.content,
+        'attachments': note.attachments
+            .map((file) => {
+                  'name': file.name,
+                  'base64_data': file.base64Data,
+                  'mime_type': file.mimeType,
+                })
+            .toList(),
       }),
     );
     if (response.statusCode != 200) {
