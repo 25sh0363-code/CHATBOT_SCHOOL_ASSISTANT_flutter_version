@@ -297,9 +297,66 @@ def make_math_readable(text: str) -> str:
     # Remove stray braces that can appear after mixed LaTeX/plain output.
     text = text.replace("{", "").replace("}", "")
 
+    # Normalize common malformed output artifacts from model responses.
+    text = re.sub(r"\bpi\b", "π", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bepsilon_?0\b", "ε₀", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bvarepsilon_?0\b", "ε₀", text, flags=re.IGNORECASE)
+
+    # Fix accidental letter O where numeric 0 is intended in subscripts like _O.
+    text = re.sub(r"_O\b", "₀", text)
+    text = re.sub(r"_0\b", "₀", text)
+
+    # Readable charge/field suffixes.
+    text = re.sub(r"\bE_\+\b", "E₊", text)
+    text = re.sub(r"\bE_-\b", "E₋", text)
+    text = re.sub(r"\bq_\+\b", "q₊", text)
+    text = re.sub(r"\bq_-\b", "q₋", text)
+
+    # Remove unnecessary spaces around equation symbols.
+    text = re.sub(r"\s*([=+\-*/^()])\s*", r" \1 ", text)
+    text = re.sub(r"[ ]{2,}", " ", text)
+
     # Cleanup repeated whitespace/newlines introduced by replacements.
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]{2,}", " ", text)
+
+    def _format_formula_multiline(formula: str) -> str:
+        cleaned = formula.strip()
+        if not cleaned:
+            return cleaned
+
+        # Add deliberate line breaks for long expressions so they wrap naturally.
+        if len(cleaned) > 54:
+            cleaned = cleaned.replace(" = ", " =\n  ", 1)
+            cleaned = cleaned.replace(" + ", "\n+ ")
+            cleaned = cleaned.replace(" - ", "\n- ")
+
+        return cleaned
+
+    def _equation_line_replacer(match: re.Match[str]) -> str:
+        formula = _format_formula_multiline(match.group(1))
+        return f"\n\n**Equation**\n```text\n{formula}\n```\n"
+
+    # Convert inline "Equation: ..." lines into dedicated markdown blocks.
+    text = re.sub(
+        r"(?:^|\n)\s*Equation:\s*([^\n]+)",
+        _equation_line_replacer,
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Convert standalone equation-looking lines into blocks when they are long.
+    def _long_equation_line_replacer(match: re.Match[str]) -> str:
+        formula = _format_formula_multiline(match.group(1))
+        return f"\n```text\n{formula}\n```\n"
+
+    text = re.sub(
+        r"(?:^|\n)\s*([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇][A-Za-z0-9α-ωΑ-Ω₀₁₂₃₄₊₋_ ]{0,16}\s*=\s*[^\n]{35,})",
+        _long_equation_line_replacer,
+        text,
+    )
+
+    text = re.sub(r"\n{3,}", "\n\n", text)
 
     return text.strip()
 
@@ -529,6 +586,8 @@ def _compact_system_prompt(*, context: str, strict_mode: bool, response_style: s
         "Use retrieved context first. Keep answers accurate, exam-relevant, and concise unless asked for detail.\n"
         "If pronouns like this/that/these appear, resolve using chat history.\n"
         "For formulas/steps, prefer clean markdown and compact structure.\n"
+        "IMPORTANT equation style: write equations in plain readable text, not LaTeX code.\n"
+        "Use forms like: E = (1/(4π ε₀)) * (2p/x^3), never use { } blocks or backslash commands.\n"
         "If strict textbook mode is yes, do not add outside facts.\n\n"
         f"Response style rule: {response_style}\n"
         f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n\n"
@@ -756,7 +815,8 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
         "You are an expert chemistry and physics tutor. Analyze the attached image and answer the question.\n"
         "Use retrieved context first where applicable and stay NCERT-aligned.\n"
         "Interpret formulas/graphs/diagrams clearly.\n"
-        "Use markdown when helpful but keep concise for direct questions.\n\n"
+        "Use markdown when helpful but keep concise for direct questions.\n"
+        "Write equations in plain readable form (example: E = (1/(4π ε₀)) * (2p/x^3)); avoid LaTeX commands and braces.\n\n"
         f"Response style rule: {response_style}\n"
         f"Retrieved context:\n{context if used_context else 'No additional context retrieved.'}\n\n"
         f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n"
