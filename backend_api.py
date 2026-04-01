@@ -223,33 +223,14 @@ def ensure_local_vectorstore() -> None:
 
 
 def make_math_readable(text: str) -> str:
-    """Format math and ensure markdown compatibility."""
+    """Convert LaTeX math to plain readable text. Priority: remove all backslashes and make readable."""
     if not text:
         return text
 
-    # Convert display/inline LaTeX delimiters to readable math lines.
-    text = re.sub(r"\\\[\s*(.*?)\s*\\\]", r"\n\nEquation: \1\n", text, flags=re.DOTALL)
-    text = re.sub(r"\$\$\s*(.*?)\s*\$\$", r"\n\nEquation: \1\n", text, flags=re.DOTALL)
-    text = re.sub(r"\\\((.*?)\\\)", r"\1", text, flags=re.DOTALL)
+    # Remove LaTeX delimiters (keep content).
+    text = re.sub(r"\\\[|\\\]|\$\$|\\\(|\\\)", "", text)
 
-    # Simplify common LaTeX constructs.
-    text = re.sub(r"\\sqrt\{([^{}]+)\}", r"sqrt(\1)", text)
-    text = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"(\1)/(\2)", text)
-    text = re.sub(r"\{([^{}]+)\}\^\{([^{}]+)\}", r"\1^\2", text)
-    text = re.sub(r"\{([^{}]+)\}_\{([^{}]+)\}", r"\1_\2", text)
-    text = re.sub(r"([A-Za-z0-9])\^\{([^{}]+)\}", r"\1^\2", text)
-    text = re.sub(r"([A-Za-z0-9])_\{([^{}]+)\}", r"\1_\2", text)
-
-    # Unwrap common LaTeX text wrappers.
-    text = re.sub(r"\\mathrm\{([^{}]+)\}", r"\1", text)
-    text = re.sub(r"\\text\{([^{}]+)\}", r"\1", text)
-    text = re.sub(r"\\left", "", text)
-    text = re.sub(r"\\right", "", text)
-
-    # Convert generic LaTeX command wrappers like \operatorname{...} to their content.
-    text = re.sub(r"\\[a-zA-Z]+\{([^{}]+)\}", r"\1", text)
-
-    # Replace Greek letters and math symbols with Unicode.
+    # Replace Greek letters and math symbols with Unicode FIRST, before stripping backslashes.
     replacements = {
         "\\epsilon": "ε",
         "\\varepsilon": "ε",
@@ -265,98 +246,70 @@ def make_math_readable(text: str) -> str:
         "\\omega": "ω",
         "\\Omega": "Ω",
         "\\lambda": "λ",
+        "\\phi": "φ",
+        "\\psi": "ψ",
+        "\\xi": "ξ",
+        "\\zeta": "ζ",
+        "\\eta": "η",
+        "\\tau": "τ",
+        "\\rho": "ρ",
         "\\times": "×",
         "\\cdot": "·",
         "\\pm": "±",
+        "\\mp": "∓",
         "\\approx": "≈",
         "\\leq": "≤",
         "\\geq": "≥",
         "\\neq": "≠",
+        "\\equiv": "≡",
+        "\\propto": "∝",
         "\\sum": "∑",
+        "\\prod": "∏",
         "\\int": "∫",
         "\\partial": "∂",
         "\\nabla": "∇",
         "\\infty": "∞",
+        "\\rightarrow": "→",
+        "\\leftarrow": "←",
+        "\\leftrightarrow": "↔",
     }
     for src, dst in replacements.items():
         text = text.replace(src, dst)
 
-    # Compact common numeric subscripts for readability (e.g., ε_0 => ε₀).
-    text = re.sub(r"([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇])_0\b", r"\1₀", text)
-    text = re.sub(r"([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇])_1\b", r"\1₁", text)
-    text = re.sub(r"([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇])_2\b", r"\1₂", text)
-    text = re.sub(r"([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇])_3\b", r"\1₃", text)
-    text = re.sub(r"([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇])_4\b", r"\1₄", text)
+    # Simplify LaTeX fraction, sqrt, etc.
+    text = re.sub(r"\\sqrt\{([^}]*)\}", r"sqrt(\1)", text)
+    text = re.sub(r"\\frac\{([^}]*)\}\{([^}]*)\}", r"(\1)/(\2)", text)
+    text = re.sub(r"\\mathrm\{([^}]*)\}", r"\1", text)
+    text = re.sub(r"\\text\{([^}]*)\}", r"\1", text)
+    text = re.sub(r"\\operatorname\{([^}]*)\}", r"\1", text)
+    
+    # Remove \left and \right
+    text = text.replace("\\left", "").replace("\\right", "")
 
-    # Remove escape slashes before plain symbols and punctuation.
-    text = re.sub(r"\\([=+\-*/()\[\]{}])", r"\1", text)
+    # Strip ALL remaining backslashes before any character (removes stray LaTeX commands).
+    text = re.sub(r"\\([a-zA-Z]+|\W)", r"\1", text)
 
-    # Drop leftover standalone LaTeX commands while keeping their content where possible.
-    text = re.sub(r"\\[a-zA-Z]+\s*", "", text)
-
-    # Remove stray braces that can appear after mixed LaTeX/plain output.
+    # Remove all curly braces (they're just LaTeX grouping).
     text = text.replace("{", "").replace("}", "")
 
-    # Normalize common malformed output artifacts from model responses.
-    text = re.sub(r"\bpi\b", "π", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bepsilon_?0\b", "ε₀", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bvarepsilon_?0\b", "ε₀", text, flags=re.IGNORECASE)
+    # Convert subscript 0/1/2/3 to Unicode subscripts.
+    text = re.sub(r"([a-zA-Zα-ωΔΩε∂∇])_0\b", r"\1₀", text)
+    text = re.sub(r"([a-zA-Zα-ωΔΩε∂∇])_1\b", r"\1₁", text)
+    text = re.sub(r"([a-zA-Zα-ωΔΩε∂∇])_2\b", r"\1₂", text)
+    text = re.sub(r"([a-zA-Zα-ωΔΩε∂∇])_3\b", r"\1₃", text)
 
-    # Fix accidental letter O where numeric 0 is intended in subscripts like _O.
+    # Fix subscript O (letter) that should be 0 (number).
     text = re.sub(r"_O\b", "₀", text)
-    text = re.sub(r"_0\b", "₀", text)
 
-    # Readable charge/field suffixes.
+    # Common field/charge notation.
     text = re.sub(r"\bE_\+\b", "E₊", text)
     text = re.sub(r"\bE_-\b", "E₋", text)
-    text = re.sub(r"\bq_\+\b", "q₊", text)
-    text = re.sub(r"\bq_-\b", "q₋", text)
 
-    # Remove unnecessary spaces around equation symbols.
-    text = re.sub(r"\s*([=+\-*/^()])\s*", r" \1 ", text)
+    # Normalize spaces around key symbols.
+    text = re.sub(r"\s*=\s*", " = ", text)
+    text = re.sub(r"\s*\+\s*", " + ", text)
     text = re.sub(r"[ ]{2,}", " ", text)
-
-    # Cleanup repeated whitespace/newlines introduced by replacements.
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    text = re.sub(r"[ \t]{2,}", " ", text)
-
-    def _format_formula_multiline(formula: str) -> str:
-        cleaned = formula.strip()
-        if not cleaned:
-            return cleaned
-
-        # Add deliberate line breaks for long expressions so they wrap naturally.
-        if len(cleaned) > 54:
-            cleaned = cleaned.replace(" = ", " =\n  ", 1)
-            cleaned = cleaned.replace(" + ", "\n+ ")
-            cleaned = cleaned.replace(" - ", "\n- ")
-
-        return cleaned
-
-    def _equation_line_replacer(match: re.Match[str]) -> str:
-        formula = _format_formula_multiline(match.group(1))
-        return f"\n\n**Equation**\n```text\n{formula}\n```\n"
-
-    # Convert inline "Equation: ..." lines into dedicated markdown blocks.
-    text = re.sub(
-        r"(?:^|\n)\s*Equation:\s*([^\n]+)",
-        _equation_line_replacer,
-        text,
-        flags=re.IGNORECASE,
-    )
-
-    # Convert standalone equation-looking lines into blocks when they are long.
-    def _long_equation_line_replacer(match: re.Match[str]) -> str:
-        formula = _format_formula_multiline(match.group(1))
-        return f"\n```text\n{formula}\n```\n"
-
-    text = re.sub(
-        r"(?:^|\n)\s*([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇][A-Za-z0-9α-ωΑ-Ω₀₁₂₃₄₊₋_ ]{0,16}\s*=\s*[^\n]{35,})",
-        _long_equation_line_replacer,
-        text,
-    )
-
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"\n{2,}", "\n", text)
 
     return text.strip()
 
@@ -377,53 +330,8 @@ def is_textbook_only_mode(question: str) -> bool:
 
 
 def _response_style_instructions(question: str) -> str:
-    q = question.strip().lower()
-    short_q_prefixes = (
-        "what is",
-        "define",
-        "state",
-        "name",
-        "who is",
-        "when is",
-        "where is",
-    )
-
-    if q.startswith(short_q_prefixes):
-        return (
-            "Question type: direct factual question. "
-            "Answer in 2-5 lines only. Start with the exact answer, then one short supporting line. "
-            "Do not add full-topic explanation unless explicitly asked."
-        )
-
-    if any(token in q for token in ("mcq", "option", "choose the correct", "a)", "b)", "c)", "d)")):
-        return (
-            "Question type: MCQ/objective. "
-            "Return only: Correct option + 1-2 line reason."
-        )
-
-    if any(token in q for token in ("solve", "calculate", "numerical", "find", "evaluate")):
-        return (
-            "Question type: numerical/problem solving. "
-            "Return a compact step-by-step solution: Given, Formula, Substitution, Final Answer. "
-            "Keep steps concise."
-        )
-
-    if any(token in q for token in ("difference", "compare", "vs", "distinguish")):
-        return (
-            "Question type: comparison. "
-            "Prefer a short markdown table with only the key differences."
-        )
-
-    if any(token in q for token in ("explain", "why", "how", "derive", "in detail", "detailed")):
-        return (
-            "Question type: explanatory. "
-            "Give a complete but focused explanation with headings and examples."
-        )
-
-    return (
-        "Question type: standard query. "
-        "Answer directly and briefly first (3-6 lines), then add only essential supporting points."
-    )
+    """Return single clean instruction for any question type."""
+    return "Answer directly and concisely. Use paragraphs and equations, not excessive lists or nested structures. Keep it clean."
 
 
 def _is_short_direct_question(question: str) -> bool:
@@ -580,18 +488,13 @@ def _chat_llm(model_name: str, max_tokens: int, temperature: float) -> ChatOpenA
 
 
 def _compact_system_prompt(*, context: str, strict_mode: bool, response_style: str) -> str:
-    context_block = context if context else "No relevant NCERT context retrieved."
+    context_block = context if context else "No relevant context found."
     return (
-        "You are an NCERT-aligned Class 11-12 Chemistry and Physics tutor.\n"
-        "Use retrieved context first. Keep answers accurate, exam-relevant, and concise unless asked for detail.\n"
-        "If pronouns like this/that/these appear, resolve using chat history.\n"
-        "For formulas/steps, prefer clean markdown and compact structure.\n"
-        "IMPORTANT equation style: write equations in plain readable text, not LaTeX code.\n"
-        "Use forms like: E = (1/(4π ε₀)) * (2p/x^3), never use { } blocks or backslash commands.\n"
-        "If strict textbook mode is yes, do not add outside facts.\n\n"
-        f"Response style rule: {response_style}\n"
-        f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n\n"
-        f"Retrieved NCERT Context:\n{context_block}"
+        "You are a Chemistry and Physics tutor. Answer concisely and clearly.\n"
+        "Write equations in plain text (e.g., E = (1/(4πε₀)) * q), never use LaTeX code or backslashes.\n"
+        "Use paragraphs for explanations. Avoid excessive bullet points or nested formatting.\n"
+        f"Textbook only mode: {'yes' if strict_mode else 'no'}\n\n"
+        f"Context:\n{context_block}"
     )
 
 
