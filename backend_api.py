@@ -243,9 +243,16 @@ def make_math_readable(text: str) -> str:
     # Unwrap common LaTeX text wrappers.
     text = re.sub(r"\\mathrm\{([^{}]+)\}", r"\1", text)
     text = re.sub(r"\\text\{([^{}]+)\}", r"\1", text)
+    text = re.sub(r"\\left", "", text)
+    text = re.sub(r"\\right", "", text)
+
+    # Convert generic LaTeX command wrappers like \operatorname{...} to their content.
+    text = re.sub(r"\\[a-zA-Z]+\{([^{}]+)\}", r"\1", text)
 
     # Replace Greek letters and math symbols with Unicode.
     replacements = {
+        "\\epsilon": "ε",
+        "\\varepsilon": "ε",
         "\\theta": "θ",
         "\\alpha": "α",
         "\\beta": "β",
@@ -265,15 +272,30 @@ def make_math_readable(text: str) -> str:
         "\\leq": "≤",
         "\\geq": "≥",
         "\\neq": "≠",
+        "\\sum": "∑",
+        "\\int": "∫",
+        "\\partial": "∂",
+        "\\nabla": "∇",
+        "\\infty": "∞",
     }
     for src, dst in replacements.items():
         text = text.replace(src, dst)
+
+    # Compact common numeric subscripts for readability (e.g., ε_0 => ε₀).
+    text = re.sub(r"([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇])_0\b", r"\1₀", text)
+    text = re.sub(r"([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇])_1\b", r"\1₁", text)
+    text = re.sub(r"([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇])_2\b", r"\1₂", text)
+    text = re.sub(r"([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇])_3\b", r"\1₃", text)
+    text = re.sub(r"([A-Za-zα-ωΑ-ΩεμσπθΔΩ∂∇])_4\b", r"\1₄", text)
 
     # Remove escape slashes before plain symbols and punctuation.
     text = re.sub(r"\\([=+\-*/()\[\]{}])", r"\1", text)
 
     # Drop leftover standalone LaTeX commands while keeping their content where possible.
     text = re.sub(r"\\[a-zA-Z]+\s*", "", text)
+
+    # Remove stray braces that can appear after mixed LaTeX/plain output.
+    text = text.replace("{", "").replace("}", "")
 
     # Cleanup repeated whitespace/newlines introduced by replacements.
     text = re.sub(r"\n{3,}", "\n\n", text)

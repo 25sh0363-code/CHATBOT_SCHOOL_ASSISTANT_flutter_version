@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -56,7 +57,15 @@ class _NotesScreenState extends State<NotesScreen> {
   Future<void> _addNote() async {
     final topic = _topicController.text.trim();
     final content = _contentController.text.trim();
-    if (topic.isEmpty || content.isEmpty) {
+    final hasAttachments = _attachments.isNotEmpty;
+    if (topic.isEmpty || (content.isEmpty && !hasAttachments)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Add a topic and either note text or at least one attachment.'),
+          ),
+        );
+      }
       return;
     }
 
@@ -116,9 +125,19 @@ class _NotesScreenState extends State<NotesScreen> {
     }
 
     final selected = <_SelectedAttachment>[];
+    final failed = <String>[];
     for (final file in result.files) {
-      final bytes = file.bytes;
+      Uint8List? bytes = file.bytes;
+      if ((bytes == null || bytes.isEmpty) && (file.path?.isNotEmpty ?? false)) {
+        try {
+          bytes = await File(file.path!).readAsBytes();
+        } catch (_) {
+          bytes = null;
+        }
+      }
+
       if (bytes == null || bytes.isEmpty) {
+        failed.add(file.name);
         continue;
       }
       selected.add(
@@ -134,11 +153,28 @@ class _NotesScreenState extends State<NotesScreen> {
       return;
     }
 
+    if (selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not read selected files. Please try smaller files or different files.'),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _attachments
         ..clear()
         ..addAll(selected);
     });
+
+    if (failed.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Some files were skipped: ${failed.join(', ')}'),
+        ),
+      );
+    }
   }
 
   String _mimeTypeFromFilename(String filename) {
@@ -161,7 +197,7 @@ class _NotesScreenState extends State<NotesScreen> {
     if (lower.endsWith('.txt')) {
       return 'text/plain';
     }
-    return 'image/jpeg';
+    return 'application/octet-stream';
   }
 
   IconData _iconForMimeType(String mimeType) {
