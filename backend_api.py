@@ -309,9 +309,79 @@ def make_math_readable(text: str) -> str:
     text = re.sub(r"\s*=\s*", " = ", text)
     text = re.sub(r"\s*\+\s*", " + ", text)
     text = re.sub(r"[ ]{2,}", " ", text)
-    text = re.sub(r"\n{2,}", "\n", text)
+    # Keep paragraph breaks for markdown readability.
+    text = re.sub(r"\n{3,}", "\n\n", text)
 
     return text.strip()
+
+
+def _finalize_answer_text(text: str) -> str:
+    """Normalize markdown/list artifacts so output is readable in the mobile UI."""
+    if not text:
+        return text
+
+    cleaned = text
+
+    # Remove duplicate bullets like "1. • • ..." or "- • ...".
+    cleaned = re.sub(r"(?m)^(\s*\d+\.?)\s*[•\-]+\s*[•\-]+\s*", r"\1 ", cleaned)
+    cleaned = re.sub(r"(?m)^\s*[•\-]+\s*[•\-]+\s*", "- ", cleaned)
+
+    # Normalize spacing around numbered items and headings.
+    cleaned = re.sub(r"(?m)^\s*(\d+)\s*\)\s*", r"\1. ", cleaned)
+    cleaned = re.sub(r"(?m)^\s*(\d+\.)\s+", r"\1 ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+
+    return cleaned.strip()
+
+
+def _finalize_notes_text(text: str) -> str:
+    """Apply stricter note formatting so sections are consistently readable in app UI."""
+    if not text:
+        return text
+
+    cleaned = _finalize_answer_text(text)
+
+    # Normalize common section titles to markdown headings.
+    heading_patterns = {
+        r"(?im)^\s*overview\s*:?": "## Overview",
+        r"(?im)^\s*key\s+concepts?\s*:?": "## Key Concepts",
+        r"(?im)^\s*important\s+points?\s*:?": "## Important Points",
+        r"(?im)^\s*formulas?\s*/\s*examples?\s*:?": "## Formulas and Examples",
+        r"(?im)^\s*formula(?:s)?\s+and\s+examples?\s*:?": "## Formulas and Examples",
+        r"(?im)^\s*quick\s+revision\s+checklist\s*:?": "## Quick Revision Checklist",
+    }
+    for pattern, replacement in heading_patterns.items():
+        cleaned = re.sub(pattern, replacement, cleaned)
+
+    # Normalize bullet characters for consistent rendering.
+    cleaned = re.sub(r"(?m)^\s*[•●]\s+", "- ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+    # Ensure minimum structure exists if model skipped headings.
+    if "## Overview" not in cleaned:
+        cleaned = f"## Overview\n{cleaned}".strip()
+    if "## Quick Revision Checklist" not in cleaned:
+        cleaned = f"{cleaned}\n\n## Quick Revision Checklist\n- Revise key definitions\n- Revise core formulas\n- Practice one representative question"
+
+    return cleaned.strip()
+
+
+def _looks_incomplete(text: str) -> bool:
+    if not text:
+        return True
+    tail = text.rstrip()
+    if not tail:
+        return True
+    return tail.endswith((":", ",", "=", "+", "-", "*", "/", "(", "["))
+
+
+def _extract_finish_reason(result: Any) -> str:
+    metadata = getattr(result, "response_metadata", None) or {}
+    finish_reason = metadata.get("finish_reason", "")
+    if isinstance(finish_reason, list) and finish_reason:
+        finish_reason = finish_reason[0]
+    return str(finish_reason).strip().lower()
 
 
 def is_textbook_only_mode(question: str) -> bool:
@@ -330,8 +400,60 @@ def is_textbook_only_mode(question: str) -> bool:
 
 
 def _response_style_instructions(question: str) -> str:
-    """Return single clean instruction for any question type."""
-    return "Answer directly and concisely. Use paragraphs and equations, not excessive lists or nested structures. Keep it clean."
+    q = question.strip().lower()
+    short_q_prefixes = (
+        "what is",
+        "define",
+        "state",
+        "name",
+        "who is",
+        "when is",
+        "where is",
+    )
+
+    if q.startswith(short_q_prefixes):
+        return (
+            "Question type: direct factual question. "
+            "Answer in 2-5 lines only. Start with the exact answer, then one short supporting line. "
+            "Do not add full-topic explanation unless explicitly asked."
+        )
+
+    if any(token in q for token in ("mcq", "option", "choose the correct", "a)", "b)", "c)", "d)")):
+        return (
+            "Question type: MCQ/objective. "
+            "Return only: Correct option + 1-2 line reason."
+        )
+
+    if any(token in q for token in ("solve", "calculate", "numerical", "find", "evaluate")):
+        return (
+            "Question type: numerical/problem solving. "
+            "Return this exact order: Given, Formula, Substitution, Final Answer. "
+            "Ensure the final numeric expression/result is explicitly written as the last line."
+        )
+
+    if any(token in q for token in ("difference", "compare", "vs", "distinguish")):
+        return (
+            "Question type: comparison. "
+            "Prefer a short markdown table with only the key differences."
+        )
+
+    if any(token in q for token in ("explain", "why", "how", "derive", "in detail", "detailed")):
+        return (
+            "Question type: derivation/explanatory. "
+            "Use this exact structure: "
+            "1) Setup and symbols, "
+            "2) Governing law/formula, "
+            "3) Substitution and simplification in clear numbered steps, "
+            "4) Final derived expression with condition/approximation used. "
+            "Do not switch to a different physical system than asked in the question. "
+            "If setup is ambiguous, state one-line assumption first. "
+            "Do not leave derivation incomplete."
+        )
+
+    return (
+        "Question type: standard query. "
+        "Answer directly and briefly first (3-6 lines), then add only essential supporting points."
+    )
 
 
 def _is_short_direct_question(question: str) -> bool:
@@ -488,13 +610,21 @@ def _chat_llm(model_name: str, max_tokens: int, temperature: float) -> ChatOpenA
 
 
 def _compact_system_prompt(*, context: str, strict_mode: bool, response_style: str) -> str:
-    context_block = context if context else "No relevant context found."
+    context_block = context if context else "No relevant NCERT context retrieved."
     return (
-        "You are a Chemistry and Physics tutor. Answer concisely and clearly.\n"
-        "Write equations in plain text (e.g., E = (1/(4πε₀)) * q), never use LaTeX code or backslashes.\n"
-        "Use paragraphs for explanations. Avoid excessive bullet points or nested formatting.\n"
-        f"Textbook only mode: {'yes' if strict_mode else 'no'}\n\n"
-        f"Context:\n{context_block}"
+        "You are an NCERT-aligned Class 11-12 Chemistry and Physics tutor.\n"
+        "Use retrieved context first. Keep answers accurate, exam-relevant, and concise unless asked for detail.\n"
+        "Never change the target system asked by the user (example: dipole axial field must stay dipole, not ring/disc/shell).\n"
+        "If pronouns like this/that/these appear, resolve using chat history.\n"
+        "For formulas/steps, prefer clean markdown and compact structure.\n"
+        "IMPORTANT equation style: write equations in plain readable text, not LaTeX code.\n"
+        "Use forms like: E = (1/(4π ε₀)) * (2p/x^3), never use { } blocks or backslash commands.\n"
+        "For derivations, give logical step-by-step progression and avoid decorative bullet spam.\n"
+        "Never end mid-step or mid-sentence; response must end with a clear final conclusion line.\n"
+        "If strict textbook mode is yes, do not add outside facts.\n\n"
+        f"Response style rule: {response_style}\n"
+        f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n\n"
+        f"Retrieved NCERT Context:\n{context_block}"
     )
 
 
@@ -677,7 +807,30 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
     llm = _chat_llm(CHAT_MODEL, budget["max_tokens"], 0.0)
     result = llm.invoke(messages)
 
-    answer = make_math_readable(str(result.content).strip())
+    answer_raw = str(result.content).strip()
+    finish_reason = _extract_finish_reason(result)
+
+    # If generation stopped due to length or looks cut off, request only the missing tail.
+    if finish_reason == "length" or _looks_incomplete(answer_raw):
+        continuation_llm = _chat_llm(CHAT_MODEL, min(450, CHAT_MAX_TOKENS), 0.0)
+        continuation = continuation_llm.invoke(
+            [
+                *messages,
+                AIMessage(content=answer_raw),
+                HumanMessage(
+                    content=(
+                        "Continue only the missing remainder from the last line. "
+                        "Do not repeat prior text. End with a clear final answer line."
+                    )
+                ),
+            ]
+        )
+        continuation_text = str(continuation.content).strip()
+        if continuation_text:
+            answer_raw = f"{answer_raw}\n{continuation_text}".strip()
+
+    answer = make_math_readable(answer_raw)
+    answer = _finalize_answer_text(answer)
     answer = strip_source_citations(answer)
 
     return ChatResponse(
@@ -755,6 +908,7 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
     )
 
     answer = make_math_readable(str(ai_message.content).strip())
+    answer = _finalize_answer_text(answer)
     answer = strip_source_citations(answer)
 
     return ChatResponse(
@@ -851,24 +1005,54 @@ def generate_notes(
 
     llm = _chat_llm(NOTES_MODEL, NOTES_MAX_TOKENS, 0.2)
     prompt = (
-        "You are a school note generator. Write clear, exam-ready notes in markdown.\n"
+        "You are a school note generator. Write complete, exam-ready notes in markdown.\n"
+        "Follow this exact output format with all section headings present:\n"
+        "## All topic overview\n"
+        "## Key Concepts\n"
+        "## Important Points\n"
+        "## Formulas and Examples\n"
+        "## Quick Revision Checklist\n"
         "Formatting rules:\n"
-        "- Use markdown headings and subheadings.\n"
-        "- Use bullet lists for key points and numbered steps where needed.\n"
-        "- Include at least one markdown table when comparison/summary helps.\n"
-        "- Preserve math/science symbols and signs (e.g., +/- <= >= != theta alpha beta delta pi mu sigma omega sqrt).\n"
-        "- Use clean Unicode symbols where useful (x, dot, +- , ~=, <=, >=, !=, theta, alpha, beta, delta, pi, mu, sigma, omega, sqrt).\n"
-        "- Keep spacing readable and output polished for direct study use.\n"
-        "Structure output with: Overview, Key Concepts, Important Points, Formula/Examples (if relevant), and Quick Revision Checklist.\n"
-        "Keep it concise but complete for revision.\n"
-        "Prefer substance over length: include definitions, core logic, formulas, common mistakes, and quick revision cues when relevant.\n"
-        "If context from user details or attachments is present, ground the notes in that material first.\n\n"
+        "- Use clean markdown only.\n"
+        "- Keep bullets simple using '-' and numbered steps as '1. 2. 3.'.\n"
+        "- Do not output duplicate bullets, decorative symbols, or broken numbering.\n"
+        "- Keep equations in plain readable text; never use LaTeX commands, braces, or escaped symbols.\n"
+        "- Use readable forms like: E = (1/(4π ε₀)) * (2p/x^3), v = u + at, F = ma.\n"
+        "- Keep paragraph spacing clean (one blank line between sections).\n"
+        "- Avoid incomplete endings; always finish with the checklist section.\n"
+        "Content rules:\n"
+        "- Ground in user details and attachment context first when available.\n"
+        "- Include definitions, core ideas, derivation cues where relevant, and 1-2 quick examples.\n"
+        "- Keep concise but complete for revision use.\n\n"
         f"Topic: {topic.strip()}\n\n"
         f"Context:\n{context_text}"
     )
 
     result = llm.invoke([HumanMessage(content=prompt)])
-    note = make_math_readable(str(result.content).strip())
+    note_raw = str(result.content).strip()
+    finish_reason = _extract_finish_reason(result)
+
+    if finish_reason == "length" or _looks_incomplete(note_raw):
+        continuation_llm = _chat_llm(NOTES_MODEL, min(420, NOTES_MAX_TOKENS), 0.2)
+        continuation = continuation_llm.invoke(
+            [
+                HumanMessage(content=prompt),
+                AIMessage(content=note_raw),
+                HumanMessage(
+                    content=(
+                        "Continue only the missing remainder. "
+                        "Do not repeat previous text. "
+                        "Ensure the output ends after completing '## Quick Revision Checklist'."
+                    )
+                ),
+            ]
+        )
+        continuation_text = str(continuation.content).strip()
+        if continuation_text:
+            note_raw = f"{note_raw}\n{continuation_text}".strip()
+
+    note = make_math_readable(note_raw)
+    note = _finalize_notes_text(note)
 
     return NotesGenerationResponse(
         note=note,
