@@ -514,11 +514,24 @@ class _NotesScreenState extends State<NotesScreen> {
                               selectable: true,
                               extensionSet: md.ExtensionSet.gitHubFlavored,
                               styleSheet: MarkdownStyleSheet(
-                                p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
-                                h1: Theme.of(context).textTheme.titleLarge,
-                                h2: Theme.of(context).textTheme.titleMedium,
-                                h3: Theme.of(context).textTheme.titleSmall,
-                                listBullet: Theme.of(context).textTheme.bodyLarge,
+                                p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+                                h1: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 20,
+                                  height: 1.3,
+                                ),
+                                h2: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                  height: 1.4,
+                                ),
+                                h3: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  height: 1.4,
+                                ),
+                                listBullet: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+                                blockSpacing: 12,
                               ),
                             ),
                     )
@@ -564,12 +577,24 @@ class _NotesScreenState extends State<NotesScreen> {
                             selectable: true,
                             extensionSet: md.ExtensionSet.gitHubFlavored,
                             styleSheet: MarkdownStyleSheet(
-                              p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
-                              h1: Theme.of(context).textTheme.titleLarge,
-                              h2: Theme.of(context).textTheme.titleMedium,
-                              h3: Theme.of(context).textTheme.titleSmall,
-                              listBullet: Theme.of(context).textTheme.bodyLarge,
-                              blockSpacing: 10,
+                              p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+                              h1: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 20,
+                                height: 1.3,
+                              ),
+                              h2: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                                height: 1.4,
+                              ),
+                              h3: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                height: 1.4,
+                              ),
+                              listBullet: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+                              blockSpacing: 12,
                               tableBorder: TableBorder.all(
                                 color: Theme.of(context)
                                     .colorScheme

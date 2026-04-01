@@ -343,16 +343,16 @@ def _finalize_notes_text(text: str) -> str:
 
     cleaned = _finalize_answer_text(text)
 
-    # Normalize common section titles.
+    # Convert old plain section titles to markdown headings if not already present.
     heading_patterns = {
-        r"(?im)^\s*overview\s*:?": "Overview:",
-        r"(?im)^\s*topic\s*[- ]?wise\s+explanation\s*:?": "Topic-wise Explanation:",
-        r"(?im)^\s*key\s+concepts?\s*:?": "Key Concepts:",
-        r"(?im)^\s*important\s+points?\s*:?": "Important Points:",
-        r"(?im)^\s*formulas?\s*/\s*examples?\s*:?": "Formulas and Examples:",
-        r"(?im)^\s*formula(?:s)?\s+and\s+examples?\s*:?": "Formulas and Examples:",
-        r"(?im)^\s*practice\s+and\s+exam\s+focus\s*:?": "Practice and Exam Focus:",
-        r"(?im)^\s*quick\s+revision\s+checklist\s*:?": "Quick Revision Checklist:",
+        r"(?im)^\s*overview\s*:?": "# Overview",
+        r"(?im)^\s*topic\s*[- ]?wise\s+explanation\s*:?": "# Topic-wise Explanation",
+        r"(?im)^\s*key\s+concepts?\s*:?": "# Key Concepts",
+        r"(?im)^\s*important\s+points?\s*:?": "# Important Points",
+        r"(?im)^\s*formulas?\s*/\s*examples?\s*:?": "# Formulas and Examples",
+        r"(?im)^\s*formula(?:s)?\s+and\s+examples?\s*:?": "# Formulas and Examples",
+        r"(?im)^\s*practice\s+and\s+exam\s+focus\s*:?": "# Practice and Exam Focus",
+        r"(?im)^\s*quick\s+revision\s+checklist\s*:?": "# Quick Revision Checklist",
     }
     for pattern, replacement in heading_patterns.items():
         cleaned = re.sub(pattern, replacement, cleaned)
@@ -361,12 +361,12 @@ def _finalize_notes_text(text: str) -> str:
     cleaned = re.sub(r"(?m)^\s*[•●]\s+", "- ", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
 
-    # Ensure minimum structure exists if model skipped headings.
-    if "Overview:" not in cleaned:
-        cleaned = f"Overview:\n{cleaned}".strip()
-    if "Quick Revision Checklist:" not in cleaned:
+    # Ensure markdown headings are present at the start.
+    if "# Overview" not in cleaned:
+        cleaned = f"# Overview\n\n{cleaned}".strip()
+    if "# Quick Revision Checklist" not in cleaned:
         cleaned = (
-            f"{cleaned}\n\nQuick Revision Checklist:\n"
+            f"{cleaned}\n\n# Quick Revision Checklist\n"
             "- Revise key definitions\n"
             "- Revise core formulas\n"
             "- Practice one representative question"
@@ -1066,29 +1066,33 @@ def generate_notes(
     llm = _chat_llm(NOTES_MODEL, NOTES_MAX_TOKENS, 0.2)
     prompt = (
         "You are a chemistry/physics note generator. Write complete, exam-ready lesson notes in clean study format.\n"
-        "Follow this exact section order using plain section titles (no markdown symbols like ##):\n"
-        "Overview:\n"
-        "Topic-wise Explanation:\n"
-        "Key Concepts:\n"
-        "Important Points:\n"
-        "Formulas and Examples:\n"
-        "Practice and Exam Focus:\n"
-        "Quick Revision Checklist:\n"
+        "Use markdown headings for clear visual hierarchy:\n"
+        "# Overview\n"
+        "# Topic-wise Explanation\n"
+        "## [Major Subtopic 1]\n"
+        "## [Major Subtopic 2]\n"
+        "# Key Concepts\n"
+        "# Important Points\n"
+        "# Formulas and Examples\n"
+        "# Practice and Exam Focus\n"
+        "# Quick Revision Checklist\n\n"
         "Formatting rules:\n"
-        "- Use clean readable text with proper line breaks.\n"
+        "- Use # for main section headings and ## for subsections/subtopics under Topic-wise Explanation.\n"
+        "- Use clean readable text with proper line breaks between paragraphs.\n"
         "- Keep bullets simple using '-' and numbered steps as '1. 2. 3.'.\n"
         "- Do not output duplicate bullets, decorative symbols, or broken numbering.\n"
         "- Keep equations in plain readable text; never use LaTeX commands, braces, or escaped symbols.\n"
         "- Use readable forms like: E = (1/(4π ε₀)) * (2p/x^3), v = u + at, F = ma.\n"
-        "- Keep paragraph spacing clean (one blank line between sections).\n"
-        "- Avoid incomplete endings; always finish with the checklist section.\n"
+        "- Maintain blank lines between all sections and subsections for clean spacing.\n"
+        "- Avoid incomplete endings; always finish with the Quick Revision Checklist section.\n\n"
         "Content rules:\n"
         "- Ground in user details and attachment context first when available.\n"
-        "- Under Topic-wise Explanation, split the lesson into major subtopics and explain each one clearly with intuition and key points.\n"
-        "- Include definitions, full explanation, derivation cues where relevant, and at least 2 useful examples per major subtopic when possible.\n"
-        "- Do not return a tiny overview; return full revision-ready lesson notes.\n"
+        "- Under Topic-wise Explanation, split the lesson into 3-5 major subtopics with ## headings.\n"
+        "- For each subtopic: explain clearly with intuition, include definitions, key points, and 2+ practical examples.\n"
+        "- Do not return a tiny overview; provide full revision-ready lesson notes.\n"
         "- Include likely exam questions, common mistakes, and quick solving tips where relevant.\n"
-        "- Ensure clarity over brevity for chapter/lesson requests.\n\n"
+        "- Ensure clarity over brevity—provide comprehensive coverage for chapter/lesson requests.\n"
+        "- Make content scannable with proper heading hierarchy and bullet organization.\n\n"
         f"Topic: {topic.strip()}\n\n"
         f"Context:\n{context_text}"
     )
