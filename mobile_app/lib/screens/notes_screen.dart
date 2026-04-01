@@ -33,6 +33,7 @@ class _NotesScreenState extends State<NotesScreen> {
   List<QuickNote> _notes = <QuickNote>[];
   final List<_SelectedAttachment> _attachments = <_SelectedAttachment>[];
   bool _generating = false;
+  bool _showPreview = false;
 
   @override
   void initState() {
@@ -97,6 +98,7 @@ class _NotesScreenState extends State<NotesScreen> {
     _contentController.clear();
     setState(() {
       _attachments.clear();
+      _showPreview = false;
     });
   }
 
@@ -284,7 +286,10 @@ class _NotesScreenState extends State<NotesScreen> {
       if (!mounted) {
         return;
       }
-      _contentController.text = note;
+      setState(() {
+        _contentController.text = note;
+        _showPreview = true;
+      });
     } catch (e) {
       if (!mounted) {
         return;
@@ -464,13 +469,68 @@ class _NotesScreenState extends State<NotesScreen> {
                     ),
                   ],
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: _contentController,
-                    maxLines: 8,
-                    decoration: const InputDecoration(
-                      labelText: 'Generated note / manual note',
-                    ),
+                  Row(
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Edit'),
+                        selected: !_showPreview,
+                        onSelected: (_) {
+                          setState(() {
+                            _showPreview = false;
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Preview'),
+                        selected: _showPreview,
+                        onSelected: (_) {
+                          setState(() {
+                            _showPreview = true;
+                          });
+                        },
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 8),
+                  if (_showPreview)
+                    Container(
+                      width: double.infinity,
+                      constraints: const BoxConstraints(minHeight: 180),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: _contentController.text.trim().isEmpty
+                          ? Text(
+                              'No content to preview yet.',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            )
+                          : MarkdownBody(
+                              data: _contentController.text,
+                              selectable: true,
+                              extensionSet: md.ExtensionSet.gitHubFlavored,
+                              styleSheet: MarkdownStyleSheet(
+                                p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
+                                h1: Theme.of(context).textTheme.titleLarge,
+                                h2: Theme.of(context).textTheme.titleMedium,
+                                h3: Theme.of(context).textTheme.titleSmall,
+                                listBullet: Theme.of(context).textTheme.bodyLarge,
+                              ),
+                            ),
+                    )
+                  else
+                    TextField(
+                      controller: _contentController,
+                      maxLines: 14,
+                      decoration: const InputDecoration(
+                        labelText: 'Generated note / manual note',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
                   const SizedBox(height: 12),
                   FilledButton(
                     onPressed: _addNote,
@@ -499,32 +559,32 @@ class _NotesScreenState extends State<NotesScreen> {
                         subtitle: Text('Updated: ${_formatDateTime(note.updatedAt)}'),
                         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                         children: [
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: SizedBox(
-                              width: MediaQuery.of(context).size.width - 64,
-                              child: MarkdownBody(
-                                data: note.content,
-                                selectable: true,
-                                extensionSet: md.ExtensionSet.gitHubFlavored,
-                                styleSheet: MarkdownStyleSheet(
-                                  p: Theme.of(context).textTheme.bodyMedium,
-                                  tableBorder: TableBorder.all(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .outline
-                                        .withValues(alpha: 0.4),
-                                  ),
-                                  tableHead: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                  tableBody: Theme.of(context).textTheme.bodyMedium,
-                                  code: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        fontFamily: 'monospace',
-                                      ),
-                                ),
+                          MarkdownBody(
+                            data: note.content,
+                            selectable: true,
+                            extensionSet: md.ExtensionSet.gitHubFlavored,
+                            styleSheet: MarkdownStyleSheet(
+                              p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
+                              h1: Theme.of(context).textTheme.titleLarge,
+                              h2: Theme.of(context).textTheme.titleMedium,
+                              h3: Theme.of(context).textTheme.titleSmall,
+                              listBullet: Theme.of(context).textTheme.bodyLarge,
+                              blockSpacing: 10,
+                              tableBorder: TableBorder.all(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outline
+                                    .withValues(alpha: 0.4),
                               ),
+                              tableHead: Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                              tableBody: Theme.of(context).textTheme.bodyLarge,
+                              code: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                    fontFamily: 'monospace',
+                                    height: 1.4,
+                                  ),
                             ),
                           ),
                           const SizedBox(height: 8),

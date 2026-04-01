@@ -251,7 +251,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         alignment: align,
                         child: Container(
                           margin: const EdgeInsets.symmetric(vertical: 4),
-                          padding: const EdgeInsets.all(10),
+                          padding: const EdgeInsets.all(12),
                           constraints: BoxConstraints(
                             maxWidth: maxBubbleWidth.clamp(280.0, 720.0),
                           ),
@@ -272,18 +272,23 @@ class _ChatScreenState extends State<ChatScreen> {
                                   data: msg.text,
                                   selectable: true,
                                   styleSheet: MarkdownStyleSheet(
-                                    p: TextStyle(color: textColor, fontSize: 14),
-                                    h1: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold),
-                                    h2: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold),
-                                    h3: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
+                                    p: TextStyle(color: textColor, fontSize: 16, height: 1.45),
+                                    h1: TextStyle(color: textColor, fontSize: 21, height: 1.35, fontWeight: FontWeight.bold),
+                                    h2: TextStyle(color: textColor, fontSize: 19, height: 1.35, fontWeight: FontWeight.bold),
+                                    h3: TextStyle(color: textColor, fontSize: 17, height: 1.35, fontWeight: FontWeight.bold),
+                                    listBullet: TextStyle(color: textColor, fontSize: 16, height: 1.4),
+                                    listIndent: 20,
+                                    blockSpacing: 10,
                                     code: TextStyle(
                                       color: textColor,
+                                      fontSize: 15,
+                                      height: 1.4,
                                       backgroundColor: isDark ? Colors.black26 : Colors.grey[200],
                                       fontFamily: 'monospace',
                                     ),
                                     codeblockDecoration: BoxDecoration(
                                       color: isDark ? Colors.black26 : Colors.grey[200],
-                                      borderRadius: BorderRadius.circular(4),
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
                                     tableBorder: TableBorder.all(
                                       color: textColor.withValues(alpha: 0.3),
@@ -291,11 +296,14 @@ class _ChatScreenState extends State<ChatScreen> {
                                     ),
                                     tableHead: TextStyle(
                                       color: textColor,
+                                      fontSize: 15,
                                       fontWeight: FontWeight.bold,
                                     ),
-                                    tableBody: TextStyle(color: textColor),
+                                    tableBody: TextStyle(color: textColor, fontSize: 15, height: 1.35),
                                     blockquote: TextStyle(
                                       color: textColor.withValues(alpha: 0.8),
+                                      fontSize: 15,
+                                      height: 1.4,
                                       fontStyle: FontStyle.italic,
                                     ),
                                     blockquoteDecoration: BoxDecoration(
@@ -312,7 +320,6 @@ class _ChatScreenState extends State<ChatScreen> {
                                           : const Color(0xFF9CB6CB),
                                       borderRadius: BorderRadius.circular(2),
                                     ),
-                                    listBullet: TextStyle(color: textColor),
                                   ),
                                 ),
                               if (!msg.isUser && !msg.isError)

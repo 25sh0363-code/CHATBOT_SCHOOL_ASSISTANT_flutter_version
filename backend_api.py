@@ -41,7 +41,7 @@ MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "
 
 # Token limits (keep moderate to avoid high cost)
 CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "1200"))
-NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1000"))
+NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1700"))
 VISION_CHAT_MAX_TOKENS = int(os.getenv("VISION_CHAT_MAX_TOKENS", "900"))
 
 # Notes context shaping controls attachment-heavy token growth.
@@ -329,6 +329,7 @@ def _finalize_answer_text(text: str) -> str:
     # Normalize spacing around numbered items and headings.
     cleaned = re.sub(r"(?m)^\s*(\d+)\s*\)\s*", r"\1. ", cleaned)
     cleaned = re.sub(r"(?m)^\s*(\d+\.)\s+", r"\1 ", cleaned)
+    cleaned = re.sub(r"(?m)^\s*#{1,6}\s*", "", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
 
@@ -342,14 +343,16 @@ def _finalize_notes_text(text: str) -> str:
 
     cleaned = _finalize_answer_text(text)
 
-    # Normalize common section titles to markdown headings.
+    # Normalize common section titles.
     heading_patterns = {
-        r"(?im)^\s*overview\s*:?": "## Overview",
-        r"(?im)^\s*key\s+concepts?\s*:?": "## Key Concepts",
-        r"(?im)^\s*important\s+points?\s*:?": "## Important Points",
-        r"(?im)^\s*formulas?\s*/\s*examples?\s*:?": "## Formulas and Examples",
-        r"(?im)^\s*formula(?:s)?\s+and\s+examples?\s*:?": "## Formulas and Examples",
-        r"(?im)^\s*quick\s+revision\s+checklist\s*:?": "## Quick Revision Checklist",
+        r"(?im)^\s*overview\s*:?": "Overview:",
+        r"(?im)^\s*topic\s*[- ]?wise\s+explanation\s*:?": "Topic-wise Explanation:",
+        r"(?im)^\s*key\s+concepts?\s*:?": "Key Concepts:",
+        r"(?im)^\s*important\s+points?\s*:?": "Important Points:",
+        r"(?im)^\s*formulas?\s*/\s*examples?\s*:?": "Formulas and Examples:",
+        r"(?im)^\s*formula(?:s)?\s+and\s+examples?\s*:?": "Formulas and Examples:",
+        r"(?im)^\s*practice\s+and\s+exam\s+focus\s*:?": "Practice and Exam Focus:",
+        r"(?im)^\s*quick\s+revision\s+checklist\s*:?": "Quick Revision Checklist:",
     }
     for pattern, replacement in heading_patterns.items():
         cleaned = re.sub(pattern, replacement, cleaned)
@@ -359,10 +362,15 @@ def _finalize_notes_text(text: str) -> str:
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
 
     # Ensure minimum structure exists if model skipped headings.
-    if "## Overview" not in cleaned:
-        cleaned = f"## Overview\n{cleaned}".strip()
-    if "## Quick Revision Checklist" not in cleaned:
-        cleaned = f"{cleaned}\n\n## Quick Revision Checklist\n- Revise key definitions\n- Revise core formulas\n- Practice one representative question"
+    if "Overview:" not in cleaned:
+        cleaned = f"Overview:\n{cleaned}".strip()
+    if "Quick Revision Checklist:" not in cleaned:
+        cleaned = (
+            f"{cleaned}\n\nQuick Revision Checklist:\n"
+            "- Revise key definitions\n"
+            "- Revise core formulas\n"
+            "- Practice one representative question"
+        )
 
     return cleaned.strip()
 
@@ -382,6 +390,27 @@ def _extract_finish_reason(result: Any) -> str:
     if isinstance(finish_reason, list) and finish_reason:
         finish_reason = finish_reason[0]
     return str(finish_reason).strip().lower()
+
+
+def _is_derivation_question(question: str) -> bool:
+    q = question.lower()
+    return any(token in q for token in ("derive", "derivation", "show that", "prove", "explain"))
+
+
+def _has_topic_mismatch(question: str, answer: str) -> bool:
+    """Detect obvious physics-object mismatch (e.g., asked dipole but answered ring)."""
+    q = question.lower()
+    a = answer.lower()
+
+    objects = ["dipole", "ring", "disc", "disk", "sphere", "shell", "rod", "wire", "capacitor"]
+    q_objs = {obj for obj in objects if obj in q}
+    a_objs = {obj for obj in objects if obj in a}
+
+    if not q_objs or not a_objs:
+        return False
+
+    # Mismatch if answer contains an object not present in question.
+    return any(obj not in q_objs for obj in a_objs)
 
 
 def is_textbook_only_mode(question: str) -> bool:
@@ -411,10 +440,19 @@ def _response_style_instructions(question: str) -> str:
         "where is",
     )
 
+    if any(token in q for token in ("topic", "lesson", "chapter", "full explanation", "complete explanation", "teach me")):
+        return (
+            "Question type: full lesson/topic explanation. "
+            "Give a complete teaching-style answer, not a short overview. "
+            "Use clear section titles (without markdown symbols), include core concepts, intuition, formulas, and worked examples. "
+            "Cover common mistakes and exam tips at the end. "
+            "Ensure the response is self-contained and context-accurate."
+        )
+
     if q.startswith(short_q_prefixes):
         return (
             "Question type: direct factual question. "
-            "Answer in 2-5 lines only. Start with the exact answer, then one short supporting line. "
+            "Answer in 3-6 lines. Start with the exact answer, then one short supporting line. "
             "Do not add full-topic explanation unless explicitly asked."
         )
 
@@ -434,25 +472,25 @@ def _response_style_instructions(question: str) -> str:
     if any(token in q for token in ("difference", "compare", "vs", "distinguish")):
         return (
             "Question type: comparison. "
-            "Prefer a short markdown table with only the key differences."
+            "Prefer a compact comparison table or aligned bullet list with only key differences and one-line examples."
         )
 
     if any(token in q for token in ("explain", "why", "how", "derive", "in detail", "detailed")):
         return (
             "Question type: derivation/explanatory. "
-            "Use this exact structure: "
-            "1) Setup and symbols, "
-            "2) Governing law/formula, "
-            "3) Substitution and simplification in clear numbered steps, "
-            "4) Final derived expression with condition/approximation used. "
+            "Use this exact structure and titles: "
+            "Setup and symbols, Governing law, Derivation steps, Final expression. "
+            "In Derivation steps, use only numbered lines 1. 2. 3. (no bullets). "
             "Do not switch to a different physical system than asked in the question. "
+            "Keep the object/geometry and axis exactly as asked (for example dipole axial stays dipole axial). "
             "If setup is ambiguous, state one-line assumption first. "
-            "Do not leave derivation incomplete."
+            "Do not leave derivation incomplete; end with one clean final formula line and applicability condition."
         )
 
     return (
         "Question type: standard query. "
-        "Answer directly and briefly first (3-6 lines), then add only essential supporting points."
+        "Answer in a polished, readable style with short sections and clear spacing. "
+        "Start with the direct answer, then provide supporting explanation with at least one example when relevant."
     )
 
 
@@ -484,6 +522,10 @@ def _is_complex_question(question: str) -> bool:
         "reaction pathway",
         "explain why",
         "compare and contrast",
+        "topic",
+        "lesson",
+        "chapter",
+        "full explanation",
     )
     return len(q) > 180 or any(token in q for token in complex_signals)
 
@@ -613,13 +655,14 @@ def _compact_system_prompt(*, context: str, strict_mode: bool, response_style: s
     context_block = context if context else "No relevant NCERT context retrieved."
     return (
         "You are an NCERT-aligned Class 11-12 Chemistry and Physics tutor.\n"
-        "Use retrieved context first. Keep answers accurate, exam-relevant, and concise unless asked for detail.\n"
+        "Use retrieved context first. Keep answers accurate, complete, and exam-relevant.\n"
         "Never change the target system asked by the user (example: dipole axial field must stay dipole, not ring/disc/shell).\n"
         "If pronouns like this/that/these appear, resolve using chat history.\n"
-        "For formulas/steps, prefer clean markdown and compact structure.\n"
+        "For formulas/steps, prefer clean readable structure and natural section titles.\n"
         "IMPORTANT equation style: write equations in plain readable text, not LaTeX code.\n"
         "Use forms like: E = (1/(4π ε₀)) * (2p/x^3), never use { } blocks or backslash commands.\n"
         "For derivations, give logical step-by-step progression and avoid decorative bullet spam.\n"
+        "For topic/lesson requests, provide full explanation with concepts, formulas, and examples (not short overview).\n"
         "Never end mid-step or mid-sentence; response must end with a clear final conclusion line.\n"
         "If strict textbook mode is yes, do not add outside facts.\n\n"
         f"Response style rule: {response_style}\n"
@@ -810,6 +853,24 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
     answer_raw = str(result.content).strip()
     finish_reason = _extract_finish_reason(result)
 
+    # Correct obvious context drift for derivation prompts (example: dipole -> ring).
+    if _is_derivation_question(question) and _has_topic_mismatch(question, answer_raw):
+        correction = llm.invoke(
+            [
+                *messages,
+                AIMessage(content=answer_raw),
+                HumanMessage(
+                    content=(
+                        "Your previous answer drifted from the asked system. "
+                        "Rewrite from scratch strictly for the exact system in the question. "
+                        "Keep derivation context, axis/geometry, and symbols aligned with the asked problem only."
+                    )
+                ),
+            ]
+        )
+        answer_raw = str(correction.content).strip()
+        finish_reason = _extract_finish_reason(correction)
+
     # If generation stopped due to length or looks cut off, request only the missing tail.
     if finish_reason == "length" or _looks_incomplete(answer_raw):
         continuation_llm = _chat_llm(CHAT_MODEL, min(450, CHAT_MAX_TOKENS), 0.0)
@@ -963,7 +1024,6 @@ def _extract_image_text(attachment: NoteAttachment, topic: str) -> str:
     text = str(ai_message.content).strip()
     return text[:3500]
 
-
 def generate_notes(
     topic: str,
     details: str,
@@ -1005,15 +1065,17 @@ def generate_notes(
 
     llm = _chat_llm(NOTES_MODEL, NOTES_MAX_TOKENS, 0.2)
     prompt = (
-        "You are a school note generator. Write complete, exam-ready notes in markdown.\n"
-        "Follow this exact output format with all section headings present:\n"
-        "## All topic overview\n"
-        "## Key Concepts\n"
-        "## Important Points\n"
-        "## Formulas and Examples\n"
-        "## Quick Revision Checklist\n"
+        "You are a chemistry/physics note generator. Write complete, exam-ready lesson notes in clean study format.\n"
+        "Follow this exact section order using plain section titles (no markdown symbols like ##):\n"
+        "Overview:\n"
+        "Topic-wise Explanation:\n"
+        "Key Concepts:\n"
+        "Important Points:\n"
+        "Formulas and Examples:\n"
+        "Practice and Exam Focus:\n"
+        "Quick Revision Checklist:\n"
         "Formatting rules:\n"
-        "- Use clean markdown only.\n"
+        "- Use clean readable text with proper line breaks.\n"
         "- Keep bullets simple using '-' and numbered steps as '1. 2. 3.'.\n"
         "- Do not output duplicate bullets, decorative symbols, or broken numbering.\n"
         "- Keep equations in plain readable text; never use LaTeX commands, braces, or escaped symbols.\n"
@@ -1022,8 +1084,11 @@ def generate_notes(
         "- Avoid incomplete endings; always finish with the checklist section.\n"
         "Content rules:\n"
         "- Ground in user details and attachment context first when available.\n"
-        "- Include definitions, core ideas, derivation cues where relevant, and 1-2 quick examples.\n"
-        "- Keep concise but complete for revision use.\n\n"
+        "- Under Topic-wise Explanation, split the lesson into major subtopics and explain each one clearly with intuition and key points.\n"
+        "- Include definitions, full explanation, derivation cues where relevant, and at least 2 useful examples per major subtopic when possible.\n"
+        "- Do not return a tiny overview; return full revision-ready lesson notes.\n"
+        "- Include likely exam questions, common mistakes, and quick solving tips where relevant.\n"
+        "- Ensure clarity over brevity for chapter/lesson requests.\n\n"
         f"Topic: {topic.strip()}\n\n"
         f"Context:\n{context_text}"
     )
@@ -1042,7 +1107,7 @@ def generate_notes(
                     content=(
                         "Continue only the missing remainder. "
                         "Do not repeat previous text. "
-                        "Ensure the output ends after completing '## Quick Revision Checklist'."
+                        "Ensure the output ends after completing 'Quick Revision Checklist'."
                     )
                 ),
             ]
