@@ -326,10 +326,10 @@ def _finalize_answer_text(text: str) -> str:
     cleaned = re.sub(r"(?m)^(\s*\d+\.?)\s*[•\-]+\s*[•\-]+\s*", r"\1 ", cleaned)
     cleaned = re.sub(r"(?m)^\s*[•\-]+\s*[•\-]+\s*", "- ", cleaned)
 
-    # Normalize spacing around numbered items and headings.
+    # Normalize spacing around numbered items.
     cleaned = re.sub(r"(?m)^\s*(\d+)\s*\)\s*", r"\1. ", cleaned)
     cleaned = re.sub(r"(?m)^\s*(\d+\.)\s+", r"\1 ", cleaned)
-    cleaned = re.sub(r"(?m)^\s*#{1,6}\s*", "", cleaned)
+    # DO NOT strip markdown headings (#) here—they are needed for proper rendering in notes.
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
 
@@ -359,8 +359,13 @@ def _finalize_notes_text(text: str) -> str:
 
     # Normalize bullet characters for consistent rendering.
     cleaned = re.sub(r"(?m)^\s*[•●]\s+", "- ", cleaned)
+    
+    # Ensure blank lines before all markdown headings for proper parsing.
+    cleaned = re.sub(r"(?m)^(#{1,6}\s+)", r"\n\1", cleaned)
+    
+    # Normalize excessive newlines.
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-
+    
     # Ensure markdown headings are present at the start.
     if "# Overview" not in cleaned:
         cleaned = f"# Overview\n\n{cleaned}".strip()
