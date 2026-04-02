@@ -12,6 +12,6 @@ class AppConfig {
   static const String leaderboardAppsScriptUrl = String.fromEnvironment(
     'LEADERBOARD_APPS_SCRIPT_URL',
     defaultValue:
-        'https://script.google.com/macros/s/AKfycbx-w9wMDnkRIWyM3F91wG_mm0mxaHNP4UuITLGQXQcPMuFz85AkIuG0k_qlCENOccXTMA/exec',
+        'https://script.google.com/macros/s/AKfycbzSOUytt01HIwm5-6QslfmFFhXRnFLfxUqD-e7iTVl_5DNtW9odhtrHUZjkESeYj6lG6g/exec',
   );
 }

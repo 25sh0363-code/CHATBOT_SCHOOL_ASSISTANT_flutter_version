@@ -32,37 +32,79 @@ class LeaderboardApiService {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('Submit failed: ${response.statusCode} ${response.body}');
     }
+
+    final decoded = _tryDecodeMap(response.body);
+    if (decoded != null && decoded['ok'] == false) {
+      throw Exception('Submit failed: ${decoded['error'] ?? _preview(response.body)}');
+    }
   }
 
-  Future<void> deleteResult(String resultId) async {
+  Future<void> deleteResult(SharedTestResult result) async {
     final uri = Uri.parse(baseUrl);
-    final response = await _client.post(
+    final payload = <String, dynamic>{
+      'action': 'delete_result',
+      'id': result.id,
+      'result_id': result.id,
+      'student_name': result.studentName,
+      'subject': result.subject,
+      'percentage': result.percentage,
+      'test_title': result.testTitle,
+      'created_at': result.createdAt.toIso8601String(),
+    };
+
+    final postResponse = await _client.post(
       uri,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'action': 'delete_result',
-        'id': resultId,
-      }),
+      body: jsonEncode(payload),
     );
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Delete failed: ${response.statusCode} ${response.body}');
+    if (postResponse.statusCode >= 200 && postResponse.statusCode < 300) {
+      final decoded = _tryDecodeMap(postResponse.body);
+      final isSuccess = decoded == null ||
+          decoded['ok'] == true ||
+          decoded['deleted'] == true ||
+          decoded['status'] == 'ok';
+      if (isSuccess) {
+        return;
+      }
+    }
+
+    // Some Apps Script deployments only support doGet for delete_result.
+    final getUri = uri.replace(
+      queryParameters: {
+        'action': 'delete_result',
+        'id': result.id,
+        'result_id': result.id,
+        'student_name': result.studentName,
+        'subject': result.subject,
+        'percentage': result.percentage.toString(),
+        if (result.testTitle != null) 'test_title': result.testTitle!,
+        'created_at': result.createdAt.toIso8601String(),
+      },
+    );
+    final getResponse = await _client.get(getUri);
+    if (getResponse.statusCode < 200 || getResponse.statusCode >= 300) {
+      throw Exception(
+        'Delete failed: ${postResponse.statusCode}/${getResponse.statusCode} '
+        '${_preview(getResponse.body)}',
+      );
+    }
+
+    final decoded = _tryDecodeMap(getResponse.body);
+    final isSuccess = decoded == null ||
+        decoded['ok'] == true ||
+        decoded['deleted'] == true ||
+        decoded['status'] == 'ok';
+    if (!isSuccess) {
+      throw Exception('Delete failed: ${decoded['error'] ?? _preview(getResponse.body)}');
     }
   }
 
   Future<List<SharedTestResult>> fetchRecentResults({int limit = 100}) async {
-    final uri = Uri.parse(baseUrl).replace(
-      queryParameters: {
-        'action': 'recent_results',
-        'limit': '$limit',
-      },
+    final dynamic decoded = await _readAction(
+      action: 'recent_results',
+      params: {'limit': '$limit'},
     );
-    final response = await _client.get(uri);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Recent fetch failed: ${response.statusCode}');
-    }
-
-    final dynamic decoded = jsonDecode(response.body);
     final list = _extractList(decoded, preferredKey: 'results');
     return list.map(_parseSharedResult).toList();
   }
@@ -71,21 +113,78 @@ class LeaderboardApiService {
     required String subject,
     int limit = 100,
   }) async {
-    final uri = Uri.parse(baseUrl).replace(
-      queryParameters: {
-        'action': 'leaderboard',
+    final dynamic decoded = await _readAction(
+      action: 'leaderboard',
+      params: {
         'subject': subject,
         'limit': '$limit',
       },
     );
-    final response = await _client.get(uri);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Leaderboard fetch failed: ${response.statusCode}');
-    }
-
-    final dynamic decoded = jsonDecode(response.body);
     final list = _extractList(decoded, preferredKey: 'leaderboard');
     return list.map(_parseLeaderboardEntry).toList();
+  }
+
+  Future<dynamic> _readAction({
+    required String action,
+    Map<String, String> params = const <String, String>{},
+  }) async {
+    final uri = Uri.parse(baseUrl).replace(
+      queryParameters: {
+        'action': action,
+        '_ts': DateTime.now().millisecondsSinceEpoch.toString(),
+        ...params,
+      },
+    );
+
+    final getResponse = await _client.get(uri);
+    if (getResponse.statusCode >= 200 && getResponse.statusCode < 300) {
+      try {
+        return jsonDecode(getResponse.body);
+      } catch (_) {
+        // Fall back to POST when Apps Script is deployed with doPost only.
+      }
+    }
+
+    final postResponse = await _client.post(
+      Uri.parse(baseUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'action': action,
+        ...params,
+      }),
+    );
+    if (postResponse.statusCode < 200 || postResponse.statusCode >= 300) {
+      throw Exception(
+        '$action failed: ${postResponse.statusCode} ${_preview(postResponse.body)}',
+      );
+    }
+    try {
+      return jsonDecode(postResponse.body);
+    } catch (_) {
+      throw Exception(
+        '$action returned non-JSON response: ${_preview(postResponse.body)}',
+      );
+    }
+  }
+
+  String _preview(String text) {
+    final compact = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (compact.length <= 160) {
+      return compact;
+    }
+    return '${compact.substring(0, 160)}...';
+  }
+
+  Map<String, dynamic>? _tryDecodeMap(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+    } catch (_) {
+      // Keep null to indicate non-JSON responses.
+    }
+    return null;
   }
 
   List<Map<String, dynamic>> _extractList(dynamic decoded,
@@ -110,18 +209,59 @@ class LeaderboardApiService {
     final name = (json['student_name'] ?? json['studentName'] ?? '').toString();
     final subject = (json['subject'] ?? '').toString();
     final percentageRaw = json['percentage'] ?? json['avg_percentage'] ?? 0;
+    final percentageValue = percentageRaw is num
+      ? percentageRaw.toDouble()
+      : double.tryParse(percentageRaw.toString()) ?? 0;
     final title = json['test_title'] ?? json['testTitle'];
     final createdRaw = json['created_at'] ?? json['createdAt'];
+    final createdAt = DateTime.tryParse((createdRaw ?? '').toString()) ??
+        DateTime.fromMillisecondsSinceEpoch(0);
 
-    return SharedTestResult(
-      id: id.isEmpty ? DateTime.now().microsecondsSinceEpoch.toString() : id,
+    final fallbackId = _stableResultKey(
       studentName: name,
       subject: subject,
-      percentage: (percentageRaw as num).toDouble(),
-      createdAt: DateTime.tryParse((createdRaw ?? '').toString()) ??
-          DateTime.fromMillisecondsSinceEpoch(0),
+      percentage: percentageValue,
+      createdAt: createdAt,
+      testTitle: title?.toString(),
+    );
+
+    return SharedTestResult(
+      id: id.isEmpty ? fallbackId : id,
+      studentName: name,
+      subject: subject,
+      percentage: percentageValue,
+      createdAt: createdAt,
       testTitle: title == null ? null : title.toString(),
     );
+  }
+
+  String buildResultSyncKey(SharedTestResult result) {
+    return _stableResultKey(
+      studentName: result.studentName,
+      subject: result.subject,
+      percentage: result.percentage,
+      createdAt: result.createdAt,
+      testTitle: result.testTitle,
+    );
+  }
+
+  String _stableResultKey({
+    required String studentName,
+    required String subject,
+    required double percentage,
+    required DateTime createdAt,
+    required String? testTitle,
+  }) {
+    final normalizedName = studentName.trim().toLowerCase();
+    final normalizedSubject = subject.trim().toLowerCase();
+    final normalizedTitle = (testTitle ?? '').trim().toLowerCase();
+    return [
+      normalizedName,
+      normalizedSubject,
+      percentage.toStringAsFixed(4),
+      createdAt.toUtc().toIso8601String(),
+      normalizedTitle,
+    ].join('|');
   }
 
   LeaderboardEntry _parseLeaderboardEntry(Map<String, dynamic> json) {

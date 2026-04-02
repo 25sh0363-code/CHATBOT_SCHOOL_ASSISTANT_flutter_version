@@ -38,6 +38,7 @@ class _ResultsLeaderboardScreenState extends State<ResultsLeaderboardScreen> {
   String _viewSubject = 'Physics';
   bool _isSyncing = false;
   String? _statusMessage;
+  final Set<String> _pendingCloudSyncKeys = <String>{};
 
   @override
   void initState() {
@@ -97,6 +98,7 @@ class _ResultsLeaderboardScreenState extends State<ResultsLeaderboardScreen> {
 
     setState(() {
       _results.insert(0, result);
+      _pendingCloudSyncKeys.add(_apiService.buildResultSyncKey(result));
       _viewSubject = _selectedSubject;
       _statusMessage = _apiService.isConfigured
           ? 'Result saved locally. Syncing to cloud...'
@@ -107,6 +109,11 @@ class _ResultsLeaderboardScreenState extends State<ResultsLeaderboardScreen> {
     if (_apiService.isConfigured) {
       try {
         await _apiService.submitResult(result);
+        if (mounted) {
+          setState(() {
+            _statusMessage = 'Result synced to cloud.';
+          });
+        }
         await _syncFromCloud();
       } catch (_) {
         if (mounted) {
@@ -164,21 +171,21 @@ class _ResultsLeaderboardScreenState extends State<ResultsLeaderboardScreen> {
     }
 
     try {
-      await _apiService.deleteResult(item.id);
+      await _apiService.deleteResult(item);
       await _syncFromCloud();
       if (mounted) {
         setState(() {
           _statusMessage = 'Deleted from cloud leaderboard.';
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (!mounted) {
         return;
       }
       setState(() {
         _results = previous;
         _statusMessage =
-            'Delete failed on cloud backend. Please update Apps Script delete_result.';
+            'Delete failed on cloud backend. ${e.toString()}';
       });
       await _save();
     }
@@ -198,24 +205,26 @@ class _ResultsLeaderboardScreenState extends State<ResultsLeaderboardScreen> {
         subject: _viewSubject,
         limit: 120,
       );
+      final mergedRecent = _mergePendingLocalResults(recent);
       if (!mounted) {
         return;
       }
       setState(() {
-        _results = recent;
+        _results = mergedRecent;
         _remoteLeaderboard = leaderboard;
         _remoteLeaderboardSubject = _viewSubject;
+        _reconcilePendingKeys(mergedRecent);
         _statusMessage =
             'Live cloud leaderboard active via Google Sheets backend.';
       });
       await _save();
-    } catch (_) {
+    } catch (e) {
       if (!mounted) {
         return;
       }
       setState(() {
         _statusMessage =
-            'Could not sync cloud leaderboard. Showing local cached data.';
+            'Could not sync cloud leaderboard. Showing local cached data. ${e.toString()}';
       });
     } finally {
       if (mounted) {
@@ -224,6 +233,34 @@ class _ResultsLeaderboardScreenState extends State<ResultsLeaderboardScreen> {
         });
       }
     }
+  }
+
+  List<SharedTestResult> _mergePendingLocalResults(
+      List<SharedTestResult> remoteRecent) {
+    if (_pendingCloudSyncKeys.isEmpty) {
+      return remoteRecent;
+    }
+
+    final remoteKeys =
+        remoteRecent.map((item) => _apiService.buildResultSyncKey(item)).toSet();
+    final pendingLocal = _results.where((item) {
+      final key = _apiService.buildResultSyncKey(item);
+      return _pendingCloudSyncKeys.contains(key) && !remoteKeys.contains(key);
+    });
+
+    return <SharedTestResult>[
+      ...pendingLocal,
+      ...remoteRecent,
+    ];
+  }
+
+  void _reconcilePendingKeys(List<SharedTestResult> mergedRecent) {
+    if (_pendingCloudSyncKeys.isEmpty) {
+      return;
+    }
+    final syncedKeys =
+        mergedRecent.map((item) => _apiService.buildResultSyncKey(item)).toSet();
+    _pendingCloudSyncKeys.removeWhere((key) => syncedKeys.contains(key));
   }
 
   Future<void> _onViewSubjectChanged(String subject) async {
