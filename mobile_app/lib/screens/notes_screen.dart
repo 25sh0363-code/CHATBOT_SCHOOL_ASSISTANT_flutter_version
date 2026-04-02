@@ -63,7 +63,8 @@ class _NotesScreenState extends State<NotesScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Add a topic and either note text or at least one attachment.'),
+            content: Text(
+                'Add a topic and either note text or at least one attachment.'),
           ),
         );
       }
@@ -130,7 +131,8 @@ class _NotesScreenState extends State<NotesScreen> {
     final failed = <String>[];
     for (final file in result.files) {
       Uint8List? bytes = file.bytes;
-      if ((bytes == null || bytes.isEmpty) && (file.path?.isNotEmpty ?? false)) {
+      if ((bytes == null || bytes.isEmpty) &&
+          (file.path?.isNotEmpty ?? false)) {
         try {
           bytes = await File(file.path!).readAsBytes();
         } catch (_) {
@@ -158,7 +160,8 @@ class _NotesScreenState extends State<NotesScreen> {
     if (selected.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not read selected files. Please try smaller files or different files.'),
+          content: Text(
+              'Could not read selected files. Please try smaller files or different files.'),
         ),
       );
       return;
@@ -210,7 +213,9 @@ class _NotesScreenState extends State<NotesScreen> {
     if (mime.startsWith('image/')) {
       return Icons.image_outlined;
     }
-    if (mime.contains('word') || mime.contains('document') || mime.contains('text')) {
+    if (mime.contains('word') ||
+        mime.contains('document') ||
+        mime.contains('text')) {
       return Icons.description_outlined;
     }
     return Icons.attach_file_outlined;
@@ -237,7 +242,8 @@ class _NotesScreenState extends State<NotesScreen> {
     return file;
   }
 
-  Future<void> _openAttachment(QuickNote note, QuickNoteAttachment attachment) async {
+  Future<void> _openAttachment(
+      QuickNote note, QuickNoteAttachment attachment) async {
     try {
       final file = await _materializeAttachment(note.id, attachment);
       final result = await OpenFilex.open(file.path, type: attachment.mimeType);
@@ -446,7 +452,8 @@ class _NotesScreenState extends State<NotesScreen> {
                               ? const SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : const Icon(Icons.auto_awesome_outlined),
                           label: const Text('Generate Notes'),
@@ -500,7 +507,10 @@ class _NotesScreenState extends State<NotesScreen> {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         border: Border.all(
-                          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outline
+                              .withValues(alpha: 0.5),
                         ),
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -514,35 +524,56 @@ class _NotesScreenState extends State<NotesScreen> {
                               selectable: true,
                               extensionSet: md.ExtensionSet.gitHubFlavored,
                               styleSheet: MarkdownStyleSheet(
-                                p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
-                                h1: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 22,
-                                  height: 1.3,
-                                  color: Color(0xFF1E88E5),
-                                ),
-                                h2: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 18,
-                                  height: 1.4,
-                                  color: Color(0xFF43A047),
-                                ),
-                                h3: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
-                                  height: 1.4,
-                                  color: Color(0xFFFF6F00),
-                                ),
-                                listBullet: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+                                p: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.copyWith(height: 1.6),
+                                h1: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 22,
+                                      height: 1.3,
+                                      color: Color(0xFF1E88E5),
+                                    ),
+                                h2: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 18,
+                                      height: 1.4,
+                                      color: Color(0xFF43A047),
+                                    ),
+                                h3: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                      height: 1.4,
+                                      color: Color(0xFFFF6F00),
+                                    ),
+                                listBullet: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.copyWith(height: 1.6),
                                 blockSpacing: 14,
-                                em: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                  fontStyle: FontStyle.italic,
-                                  color: Color(0xFFC62828),
-                                ),
-                                strong: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF6A1B9A),
-                                ),
+                                em: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.copyWith(
+                                      fontStyle: FontStyle.italic,
+                                      color: Color(0xFFC62828),
+                                    ),
+                                strong: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF6A1B9A),
+                                    ),
                               ),
                             ),
                     )
@@ -569,7 +600,8 @@ class _NotesScreenState extends State<NotesScreen> {
             child: _notes.isEmpty
                 ? const Padding(
                     padding: EdgeInsets.all(16),
-                    child: Text('No notes yet. Add a quick note to revise later.'),
+                    child:
+                        Text('No notes yet. Add a quick note to revise later.'),
                   )
                 : ListView.separated(
                     shrinkWrap: true,
@@ -580,34 +612,51 @@ class _NotesScreenState extends State<NotesScreen> {
                       final note = _notes[index];
                       return ExpansionTile(
                         title: Text(note.topic),
-                        subtitle: Text('Updated: ${_formatDateTime(note.updatedAt)}'),
-                        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        subtitle:
+                            Text('Updated: ${_formatDateTime(note.updatedAt)}'),
+                        childrenPadding:
+                            const EdgeInsets.fromLTRB(16, 0, 16, 12),
                         children: [
                           MarkdownBody(
                             data: note.content,
                             selectable: true,
                             extensionSet: md.ExtensionSet.gitHubFlavored,
                             styleSheet: MarkdownStyleSheet(
-                              p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
-                              h1: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 22,
-                                height: 1.3,
-                                color: Color(0xFF1E88E5),
-                              ),
-                              h2: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 18,
-                                height: 1.4,
-                                color: Color(0xFF43A047),
-                              ),
-                              h3: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 15,
-                                height: 1.4,
-                                color: Color(0xFFFF6F00),
-                              ),
-                              listBullet: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+                              p: Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(height: 1.6),
+                              h1: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 22,
+                                    height: 1.3,
+                                    color: Color(0xFF1E88E5),
+                                  ),
+                              h2: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 18,
+                                    height: 1.4,
+                                    color: Color(0xFF43A047),
+                                  ),
+                              h3: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                    height: 1.4,
+                                    color: Color(0xFFFF6F00),
+                                  ),
+                              listBullet: Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(height: 1.6),
                               blockSpacing: 14,
                               tableBorder: TableBorder.all(
                                 color: Theme.of(context)
@@ -620,19 +669,28 @@ class _NotesScreenState extends State<NotesScreen> {
                                   .bodyLarge
                                   ?.copyWith(fontWeight: FontWeight.w700),
                               tableBody: Theme.of(context).textTheme.bodyLarge,
-                              code: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              code: Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(
                                     fontFamily: 'monospace',
                                     height: 1.4,
                                     backgroundColor: Color(0xFFF5F5F5),
                                   ),
-                              em: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                fontStyle: FontStyle.italic,
-                                color: Color(0xFFC62828),
-                              ),
-                              strong: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF6A1B9A),
-                              ),
+                              em: Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(
+                                    fontStyle: FontStyle.italic,
+                                    color: Color(0xFFC62828),
+                                  ),
+                              strong: Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF6A1B9A),
+                                  ),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -648,7 +706,8 @@ class _NotesScreenState extends State<NotesScreen> {
                                         size: 16,
                                       ),
                                       label: Text(attachment.name),
-                                      onPressed: () => _openAttachment(note, attachment),
+                                      onPressed: () =>
+                                          _openAttachment(note, attachment),
                                     ),
                                   )
                                   .toList(),

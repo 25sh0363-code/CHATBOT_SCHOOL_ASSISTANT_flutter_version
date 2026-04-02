@@ -7,40 +7,40 @@ import '../models/collab_user.dart';
 import '../models/exam_event.dart';
 import '../models/homework_task.dart';
 import '../models/quick_note.dart';
+import '../models/shared_test_result.dart';
 import '../models/test_record.dart';
-import '../models/timetable_entry.dart';
-import '../models/todo_item.dart';
 import '../models/worksheet_record.dart';
 
 class LocalStoreService {
-    static const String _dailyReminderHourKey = 'daily_reminder_hour_v1';
-    static const String _dailyReminderMinuteKey = 'daily_reminder_minute_v1';
-    Future<int> loadDailyReminderHour() async {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getInt(_dailyReminderHourKey) ?? 7;
-    }
+  static const String _dailyReminderHourKey = 'daily_reminder_hour_v1';
+  static const String _dailyReminderMinuteKey = 'daily_reminder_minute_v1';
+  Future<int> loadDailyReminderHour() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_dailyReminderHourKey) ?? 7;
+  }
 
-    Future<int> loadDailyReminderMinute() async {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getInt(_dailyReminderMinuteKey) ?? 0;
-    }
+  Future<int> loadDailyReminderMinute() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_dailyReminderMinuteKey) ?? 0;
+  }
 
-    Future<void> saveDailyReminderTime(int hour, int minute) async {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_dailyReminderHourKey, hour);
-      await prefs.setInt(_dailyReminderMinuteKey, minute);
-    }
+  Future<void> saveDailyReminderTime(int hour, int minute) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_dailyReminderHourKey, hour);
+    await prefs.setInt(_dailyReminderMinuteKey, minute);
+  }
+
   static const String _testsKey = 'tests_v1';
-  static const String _timetableKey = 'timetable_v1';
   static const String _worksheetsKey = 'worksheets_v1';
   static const String _darkModeKey = 'dark_mode_v1';
   static const String _chatHistoryKey = 'chat_history_v1';
   static const String _quickNotesKey = 'quick_notes_v1';
   static const String _homeworkTasksKey = 'homework_tasks_v1';
-  static const String _todoItemsKey = 'todo_items_v1';
   static const String _examEventsKey = 'exam_events_v1';
   static const String _collabUserKey = 'collab_user_v1';
   static const String _focusTimerEndsAtKey = 'focus_timer_ends_at_v1';
+  static const String _learningJourneyKey = 'learning_journey_v1';
+  static const String _sharedTestResultsKey = 'shared_test_results_v1';
 
   Future<List<TestRecord>> loadTests() async {
     final prefs = await SharedPreferences.getInstance();
@@ -61,27 +61,6 @@ class LocalStoreService {
     final prefs = await SharedPreferences.getInstance();
     final payload = jsonEncode(tests.map((e) => e.toJson()).toList());
     await prefs.setString(_testsKey, payload);
-  }
-
-  Future<List<TimetableEntry>> loadTimetableEntries() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_timetableKey);
-    if (raw == null || raw.isEmpty) {
-      return [];
-    }
-
-    final list = (jsonDecode(raw) as List<dynamic>)
-        .cast<Map<String, dynamic>>()
-        .map(TimetableEntry.fromJson)
-        .toList();
-    list.sort((a, b) => a.date.compareTo(b.date));
-    return list;
-  }
-
-  Future<void> saveTimetableEntries(List<TimetableEntry> entries) async {
-    final prefs = await SharedPreferences.getInstance();
-    final payload = jsonEncode(entries.map((e) => e.toJson()).toList());
-    await prefs.setString(_timetableKey, payload);
   }
 
   Future<List<WorksheetRecord>> loadWorksheets() async {
@@ -158,7 +137,10 @@ class LocalStoreService {
   Future<void> saveQuickNotes(List<QuickNote> notes) async {
     final prefs = await SharedPreferences.getInstance();
     final payload = jsonEncode(notes.map((e) => e.toJson()).toList());
-    await prefs.setString(_quickNotesKey, payload);
+    final ok = await prefs.setString(_quickNotesKey, payload);
+    if (!ok) {
+      throw Exception('Could not persist quick notes to local storage.');
+    }
   }
 
   Future<List<HomeworkTask>> loadHomeworkTasks() async {
@@ -186,39 +168,6 @@ class LocalStoreService {
     final prefs = await SharedPreferences.getInstance();
     final payload = jsonEncode(tasks.map((e) => e.toJson()).toList());
     await prefs.setString(_homeworkTasksKey, payload);
-  }
-
-  Future<List<TodoItem>> loadTodoItems() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_todoItemsKey);
-    if (raw == null || raw.isEmpty) {
-      return [];
-    }
-
-    final list = (jsonDecode(raw) as List<dynamic>)
-        .cast<Map<String, dynamic>>()
-        .map(TodoItem.fromJson)
-        .toList();
-
-    list.sort((a, b) {
-      if (a.isCompleted != b.isCompleted) {
-        return a.isCompleted ? 1 : -1;
-      }
-      if (!a.isCompleted) {
-        return a.dueDate.compareTo(b.dueDate);
-      }
-      final aCompleted = a.completedAt ?? a.createdAt;
-      final bCompleted = b.completedAt ?? b.createdAt;
-      return bCompleted.compareTo(aCompleted);
-    });
-
-    return list;
-  }
-
-  Future<void> saveTodoItems(List<TodoItem> items) async {
-    final prefs = await SharedPreferences.getInstance();
-    final payload = jsonEncode(items.map((e) => e.toJson()).toList());
-    await prefs.setString(_todoItemsKey, payload);
   }
 
   Future<List<ExamEvent>> loadExamEvents() async {
@@ -281,5 +230,49 @@ class LocalStoreService {
       return;
     }
     await prefs.setString(_focusTimerEndsAtKey, value.toIso8601String());
+  }
+
+  Future<Map<String, dynamic>?> loadLearningJourneyState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_learningJourneyKey);
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      return null;
+    }
+    return decoded;
+  }
+
+  Future<void> saveLearningJourneyState(Map<String, dynamic>? state) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (state == null) {
+      await prefs.remove(_learningJourneyKey);
+      return;
+    }
+    await prefs.setString(_learningJourneyKey, jsonEncode(state));
+  }
+
+  Future<List<SharedTestResult>> loadSharedTestResults() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_sharedTestResultsKey);
+    if (raw == null || raw.isEmpty) {
+      return [];
+    }
+
+    final list = (jsonDecode(raw) as List<dynamic>)
+        .cast<Map<String, dynamic>>()
+        .map(SharedTestResult.fromJson)
+        .toList();
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  }
+
+  Future<void> saveSharedTestResults(List<SharedTestResult> items) async {
+    final prefs = await SharedPreferences.getInstance();
+    final payload = jsonEncode(items.map((e) => e.toJson()).toList());
+    await prefs.setString(_sharedTestResultsKey, payload);
   }
 }

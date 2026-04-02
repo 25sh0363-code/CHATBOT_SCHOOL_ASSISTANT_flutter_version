@@ -474,6 +474,9 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
+  static const int _maxSavedAttachmentBytesPerFile = 250 * 1024;
+  static const int _maxSavedAttachmentBytesTotal = 600 * 1024;
+
   List<CollabMessage> _messages = <CollabMessage>[];
   CollabRoom? _room;
   Timer? _pollTimer;
@@ -693,6 +696,25 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
     return Icons.attach_file_outlined;
   }
 
+  String _normalizeMeetLink(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+
+    final parsed = Uri.tryParse(trimmed);
+    if (parsed != null && parsed.hasScheme) {
+      return trimmed;
+    }
+
+    // Support links like meet.google.com/abc-defg-hij pasted without scheme.
+    if (trimmed.startsWith('meet.google.com')) {
+      return 'https://$trimmed';
+    }
+
+    return 'https://$trimmed';
+  }
+
   Future<void> _setMeetLink() async {
     final controller = TextEditingController(text: _room?.meetLink ?? '');
     final shouldSave = await showDialog<bool>(
@@ -725,11 +747,13 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
       return;
     }
 
+    final normalizedLink = _normalizeMeetLink(controller.text);
+
     final room = await widget.collabApi.updateMeetLink(
       roomId: widget.room.id,
       userEmail: widget.user.email,
       userName: widget.user.name,
-      meetLink: controller.text.trim(),
+      meetLink: normalizedLink,
     );
     if (!mounted) {
       return;
@@ -841,45 +865,112 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
   }
 
   Future<void> _saveSharedNote(CollabMessage message) async {
-    final topic = message.payload['topic']?.toString().trim() ?? '';
-    final content = message.payload['content']?.toString().trim() ?? '';
-    final attachments = _noteAttachmentsFromPayload(message);
-    if (topic.isEmpty || content.isEmpty) {
-      return;
-    }
+    try {
+      final topic = message.payload['topic']?.toString().trim() ?? '';
+      final content = message.payload['content']?.toString().trim() ?? '';
+      if (topic.isEmpty || content.isEmpty) {
+        if (!mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This shared note is missing required content.')),
+        );
+        return;
+      }
 
-    final notes = await widget.storeService.loadQuickNotes();
-    final existingIndex = notes.indexWhere(
-      (note) => note.topic == topic && note.content == content,
-    );
-    final now = DateTime.now();
+      final rawAttachments = _noteAttachmentsFromPayload(message);
+      var savedBytesTotal = 0;
+      final attachments = rawAttachments.where((item) {
+        final estimatedBytes = (item.base64Data.length * 3) ~/ 4;
+        if (estimatedBytes > _maxSavedAttachmentBytesPerFile) {
+          return false;
+        }
+        if (savedBytesTotal + estimatedBytes > _maxSavedAttachmentBytesTotal) {
+          return false;
+        }
+        savedBytesTotal += estimatedBytes;
+        return true;
+      }).toList();
 
-    if (existingIndex >= 0) {
-      notes[existingIndex] = notes[existingIndex].copyWith(
-        updatedAt: now,
-        attachments: attachments,
-      );
-    } else {
+      final notes = await widget.storeService.loadQuickNotes();
+      final now = DateTime.now();
+      final noteId = 'shared_note_${message.id}_${now.microsecondsSinceEpoch}';
+      final savedTopic = topic;
+
       notes.insert(
         0,
         QuickNote(
-          id: 'shared_note_${now.microsecondsSinceEpoch}',
-          topic: topic,
+          id: noteId,
+          topic: savedTopic,
           content: content,
           createdAt: now,
           updatedAt: now,
           attachments: attachments,
         ),
       );
-    }
 
-    await widget.storeService.saveQuickNotes(notes);
-    if (!mounted) {
-      return;
+      // First try saving with retained attachments.
+      try {
+        await widget.storeService.saveQuickNotes(notes);
+      } catch (_) {
+        // Fallback: save without attachments to guarantee note text is persisted.
+        notes[0] = QuickNote(
+          id: noteId,
+          topic: savedTopic,
+          content: content,
+          createdAt: now,
+          updatedAt: now,
+          attachments: const <QuickNoteAttachment>[],
+        );
+        try {
+          await widget.storeService.saveQuickNotes(notes);
+        } catch (_) {
+          // Last-resort compaction for macOS/desktop storage pressure:
+          // strip heavy attachments from older notes and keep newest note.
+          final compacted = <QuickNote>[];
+          for (var i = 0; i < notes.length; i++) {
+            final item = notes[i];
+            if (i == 0) {
+              compacted.add(item);
+              continue;
+            }
+            compacted.add(
+              item.copyWith(
+                attachments: const <QuickNoteAttachment>[],
+                updatedAt: item.updatedAt,
+              ),
+            );
+          }
+          await widget.storeService.saveQuickNotes(compacted);
+        }
+      }
+
+      final verification = await widget.storeService.loadQuickNotes();
+      final exists = verification.any(
+        (note) => note.id == noteId,
+      );
+      if (!exists) {
+        throw Exception('Verification failed.');
+      }
+
+      if (!mounted) {
+        return;
+      }
+      final droppedCount = rawAttachments.length - attachments.length;
+      final suffix = droppedCount > 0
+          ? ' (${droppedCount} large attachment${droppedCount == 1 ? '' : 's'} skipped for local save)'
+          : '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Saved note: $savedTopic$suffix')),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save shared note: $e')),
+      );
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Saved note: $topic')),
-    );
   }
 
   Future<void> _saveSharedWorksheet(CollabMessage message) async {
@@ -963,7 +1054,7 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
   }
 
   Future<void> _joinMeet() async {
-    final link = (_room?.meetLink ?? '').trim();
+    final link = _normalizeMeetLink(_room?.meetLink ?? '');
     if (link.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -973,10 +1064,31 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
     }
 
     final uri = Uri.tryParse(link);
-    if (uri == null) {
+    if (uri == null || uri.host.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid Meet link. Please set it again.')),
+      );
       return;
     }
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+
+    final canLaunch = await canLaunchUrl(uri);
+    if (!canLaunch) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open Meet link on this device.')),
+      );
+      return;
+    }
+
+    final launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+    if (!launched) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   Future<QuickNote?> _pickNote(List<QuickNote> notes) async {

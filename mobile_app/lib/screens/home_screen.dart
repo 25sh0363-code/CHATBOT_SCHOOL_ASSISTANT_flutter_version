@@ -4,11 +4,12 @@ import '../services/local_store_service.dart';
 import 'calendar_screen.dart';
 import 'chat_screen.dart';
 import 'collab_screen.dart';
+import 'mind_map_landscape_screen.dart';
 import 'notes_screen.dart';
+import 'learning_journey_screen.dart';
+import 'results_leaderboard_screen.dart';
 import 'study_planner_screen.dart';
 import 'tests_screen.dart';
-import 'timetable_screen.dart';
-import 'todo_screen.dart';
 import 'worksheet_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -32,14 +33,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const List<String> _titles = <String>[
     'AI Tutor',
-    'To-Do Planner',
+    'Learning Journey',
     'Notes',
     'More Tools',
   ];
 
   late final List<Widget> _pages = <Widget>[
     const ChatScreen(),
-    TodoScreen(storeService: _storeService),
+    LearningJourneyScreen(storeService: _storeService),
     NotesScreen(storeService: _storeService),
     _MoreHub(storeService: _storeService),
   ];
@@ -80,7 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(
               icon: Icon(Icons.auto_awesome_outlined), label: 'Tutor'),
           NavigationDestination(
-              icon: Icon(Icons.checklist_rtl_outlined), label: 'To-Do'),
+              icon: Icon(Icons.flag_circle_outlined), label: 'Journey'),
           NavigationDestination(
               icon: Icon(Icons.sticky_note_2_outlined), label: 'Notes'),
           NavigationDestination(
@@ -113,10 +114,8 @@ class _DecorativeBackground extends StatelessWidget {
             top: -80,
             right: -60,
             child: _GlowCircle(
-              color: Theme.of(context)
-                  .colorScheme
-                  .primary
-                  .withValues(alpha: 0.18),
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
               size: 220,
             ),
           ),
@@ -169,25 +168,28 @@ class _MoreHub extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _FeatureCard(
+          icon: Icons.hub_outlined,
+          title: 'Mind Map Studio',
+          subtitle: 'Landscape mind map canvas with central-topic branching.',
+          onTap: () => _push(
+            context,
+            'Mind Map Studio',
+            MindMapLandscapeScreen(storeService: storeService),
+          ),
+        ),
+        _FeatureCard(
           icon: Icons.analytics_outlined,
           title: 'Tests',
           subtitle: 'Track marks and performance trends.',
-          onTap: () => _push(
-              context, 'Tests', TestsScreen(storeService: storeService)),
+          onTap: () =>
+              _push(context, 'Tests', TestsScreen(storeService: storeService)),
         ),
         _FeatureCard(
           icon: Icons.calendar_month_outlined,
           title: 'Calendar',
           subtitle: 'See upcoming deadlines and study plans.',
-          onTap: () => _push(context, 'Calendar',
-              CalendarScreen(storeService: storeService)),
-        ),
-        _FeatureCard(
-          icon: Icons.schedule_outlined,
-          title: 'Timetable',
-          subtitle: 'Manage your class flow and routines.',
-          onTap: () => _push(context, 'Timetable',
-              TimetableScreen(storeService: storeService)),
+          onTap: () => _push(
+              context, 'Calendar', CalendarScreen(storeService: storeService)),
         ),
         _FeatureCard(
           icon: Icons.description_outlined,
@@ -207,8 +209,19 @@ class _MoreHub extends StatelessWidget {
           icon: Icons.groups_2_outlined,
           title: 'Collab Hub',
           subtitle: 'Google sign-in, group chat, sharing, and Meet links.',
-          onTap: () => _push(context, 'Collab Hub',
-              CollabScreen(storeService: storeService)),
+          onTap: () => _push(
+              context, 'Collab Hub', CollabScreen(storeService: storeService)),
+        ),
+        _FeatureCard(
+          icon: Icons.leaderboard_outlined,
+          title: 'Results Leaderboard',
+          subtitle:
+              'Share test percentages and view subject-wise student rankings.',
+          onTap: () => _push(
+            context,
+            'Results Leaderboard',
+            ResultsLeaderboardScreen(storeService: storeService),
+          ),
         ),
       ],
     );

@@ -6,13 +6,20 @@ This folder contains the Flutter mobile client for SINOVATE.
 
 - AI chat with retrieval-backed study context
 - Notes generation and markdown viewing
+- Learning Journey with XP and milestones
+- Mind Map Studio (landscape, interactive, zoom + pan)
 - Tests tracking and performance trend charts
-- Timetable, tasks, homework, and calendar views
-- Study planner with important exams, revision planning, and daily exam countdown reminders
-- Google Calendar handoff for single exam events
+- Results Leaderboard (subject-wise ranks from shared percentages)
+- Calendar view for study items
+- Study planner with exam countdown and focus mode
 - Focus timer with a floating in-app countdown overlay and completion popup
 - Collaboration rooms with note/worksheet sharing and owner member controls
 - Local persistence via `shared_preferences`
+
+Removed modules:
+
+- To-Do
+- Timetable
 
 ## Setup
 
@@ -29,7 +36,8 @@ uvicorn backend_api:app --host 0.0.0.0 --port 8000 --reload
 flutter pub get
 flutter run \
 	--dart-define=BACKEND_BASE_URL=http://10.0.2.2:8000 \
-	--dart-define=VECTOR_ZIP_URL=https://your-host/path/vectorstore.zip
+	--dart-define=VECTOR_ZIP_URL=https://your-host/path/vectorstore.zip \
+	--dart-define=LEADERBOARD_APPS_SCRIPT_URL=https://your-script-url/exec
 ```
 
 ## Build APK
@@ -58,6 +66,16 @@ Notes:
 - Each important exam gets a daily reminder at 7:00 AM until the exam date.
 - Reminder messages change based on how close the exam is.
 - The in-app Google Calendar action creates a one-time exam event for the exam date.
+
+## Results leaderboard cloud sync
+
+- Set `LEADERBOARD_APPS_SCRIPT_URL` using `--dart-define` to enable shared leaderboard across devices.
+- If this value is empty, leaderboard works in local-only mode on that device.
+- Expected API actions:
+	- `submit_result` (POST)
+	- `recent_results` (GET)
+	- `leaderboard` (GET)
+	- `delete_result` (POST)
 
 ## Focus timer
 

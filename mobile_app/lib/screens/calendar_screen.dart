@@ -3,7 +3,6 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../models/homework_task.dart';
 import '../models/test_record.dart';
-import '../models/timetable_entry.dart';
 import '../services/local_store_service.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -19,7 +18,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   List<TestRecord> _tests = [];
-  List<TimetableEntry> _entries = [];
   List<HomeworkTask> _items = [];
 
   @override
@@ -30,11 +28,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Future<void> _load() async {
     final tests = await widget.storeService.loadTests();
-    final entries = await widget.storeService.loadTimetableEntries();
     final items = await widget.storeService.loadHomeworkTasks();
     setState(() {
       _tests = tests;
-      _entries = entries;
       _items = items;
     });
   }
@@ -44,14 +40,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return test.testDate.year == day.year &&
           test.testDate.month == day.month &&
           test.testDate.day == day.day;
-    }).toList();
-  }
-
-  List<TimetableEntry> _entriesForDay(DateTime day) {
-    return _entries.where((entry) {
-      return entry.date.year == day.year &&
-          entry.date.month == day.month &&
-          entry.date.day == day.day;
     }).toList();
   }
 
@@ -66,7 +54,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<Object> _eventsForDay(DateTime day) {
     return <Object>[
       ..._testsForDay(day),
-      ..._entriesForDay(day),
       ..._itemsForDay(day),
     ];
   }
@@ -74,12 +61,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final tests = _testsForDay(_selectedDay);
-    final entries = _entriesForDay(_selectedDay);
     final items = _itemsForDay(_selectedDay);
     final homework =
-      items.where((item) => item.kind == HomeworkTask.kindHomework).toList();
+        items.where((item) => item.kind == HomeworkTask.kindHomework).toList();
     final tasks =
-      items.where((item) => item.kind != HomeworkTask.kindHomework).toList();
+        items.where((item) => item.kind != HomeworkTask.kindHomework).toList();
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -115,50 +101,48 @@ class _CalendarScreenState extends State<CalendarScreen> {
           SizedBox(
             height: 260,
             child: Card(
-              child: (tests.isEmpty && entries.isEmpty && homework.isEmpty && tasks.isEmpty)
+              child: (tests.isEmpty && homework.isEmpty && tasks.isEmpty)
                   ? const Center(
-                      child: Text('No tests, timetable, tasks or homework for selected day'),
+                      child:
+                          Text('No tests, tasks or homework for selected day'),
                     )
                   : ListView(
                       children: [
                         if (tests.isNotEmpty)
                           const ListTile(
-                            title: Text('Tests', style: TextStyle(fontWeight: FontWeight.w600)),
+                            title: Text('Tests',
+                                style: TextStyle(fontWeight: FontWeight.w600)),
                           ),
                         for (final item in tests)
                           ListTile(
                             title: Text(item.title),
                             subtitle: Text(item.subject),
-                            trailing: Text('Max ${item.maxMarks.toStringAsFixed(0)}'),
-                          ),
-                        if (entries.isNotEmpty)
-                          const ListTile(
-                            title: Text('Timetable', style: TextStyle(fontWeight: FontWeight.w600)),
-                          ),
-                        for (final entry in entries)
-                          ListTile(
-                            title: Text(entry.subject),
-                            subtitle: Text(entry.notes.isEmpty ? 'Class slot' : entry.notes),
-                            trailing: Text('${entry.startTime}-${entry.endTime}'),
+                            trailing:
+                                Text('Max ${item.maxMarks.toStringAsFixed(0)}'),
                           ),
                         if (homework.isNotEmpty)
                           const ListTile(
-                            title: Text('Homework', style: TextStyle(fontWeight: FontWeight.w600)),
+                            title: Text('Homework',
+                                style: TextStyle(fontWeight: FontWeight.w600)),
                           ),
                         for (final item in homework)
                           ListTile(
                             title: Text(item.title),
-                            subtitle: Text(item.notes.isEmpty ? 'Homework item' : item.notes),
+                            subtitle: Text(item.notes.isEmpty
+                                ? 'Homework item'
+                                : item.notes),
                             trailing: Text(item.reminderTime),
                           ),
                         if (tasks.isNotEmpty)
                           const ListTile(
-                            title: Text('Tasks', style: TextStyle(fontWeight: FontWeight.w600)),
+                            title: Text('Tasks',
+                                style: TextStyle(fontWeight: FontWeight.w600)),
                           ),
                         for (final item in tasks)
                           ListTile(
                             title: Text(item.title),
-                            subtitle: Text(item.notes.isEmpty ? 'Task item' : item.notes),
+                            subtitle: Text(
+                                item.notes.isEmpty ? 'Task item' : item.notes),
                             trailing: Text(item.reminderTime),
                           ),
                       ],
