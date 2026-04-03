@@ -36,13 +36,14 @@ RETRIEVAL_CHARS_PER_CHUNK = int(os.getenv("RETRIEVAL_CHARS_PER_CHUNK", "700"))
 RETRIEVAL_MAX_CONTEXT_CHARS = int(os.getenv("RETRIEVAL_MAX_CONTEXT_CHARS", "2800"))
 
 # Conversation history limits
-MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "2"))
+MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "3"))
 MAX_HISTORY_CHARS_PER_MESSAGE = int(os.getenv("MAX_HISTORY_CHARS_PER_MESSAGE", "500"))
 
-# Token limits (keep moderate to avoid high cost)
-CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "1200"))
-NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1700"))
-VISION_CHAT_MAX_TOKENS = int(os.getenv("VISION_CHAT_MAX_TOKENS", "900"))
+# Token limits (increased for better quality answers like ChatGPT+)
+CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "1600"))  # Increased from 1200 for fuller answers
+CHAT_MAX_TOKENS_COMPLEX = int(os.getenv("CHAT_MAX_TOKENS_COMPLEX", "2200"))  # For derivations/topics
+NOTES_MAX_TOKENS = int(os.getenv("NOTES_MAX_TOKENS", "1800"))  # Increased for comprehensive notes
+VISION_CHAT_MAX_TOKENS = int(os.getenv("VISION_CHAT_MAX_TOKENS", "1100"))  # Increased for image analysis
 
 # Notes context shaping controls attachment-heavy token growth.
 NOTES_MAX_DETAILS_CHARS = int(os.getenv("NOTES_MAX_DETAILS_CHARS", "1800"))
@@ -392,12 +393,37 @@ def _finalize_notes_text(text: str) -> str:
 
 
 def _looks_incomplete(text: str) -> bool:
+    """Detect if answer appears incomplete or cuts off mid-thought."""
     if not text:
         return True
     tail = text.rstrip()
     if not tail:
         return True
-    return tail.endswith((":", ",", "=", "+", "-", "*", "/", "(", "["))
+
+    # Ends with incomplete symbols or punctuation
+    if tail.endswith((":", ",", "=", "+", "-", "*", "/", "(", "[", "→", "⟹")):
+        return True
+
+    # Ends with incomplete sentence fragments
+    incomplete_markers = (
+        "for example",
+        "such as",
+        "like",
+        "in the case of",
+        "including",
+        "specifically",
+        "for instance",
+    )
+    for marker in incomplete_markers:
+        if tail.lower().endswith(marker):
+            return True
+
+    # Check for abrupt ending (answer too short for complex questions)
+    lines = tail.split("\n")
+    if len(lines) < 3 and ("derivation" in tail.lower() or "derive" in tail.lower()):
+        return True
+
+    return False
 
 
 def _extract_finish_reason(result: Any) -> str:
@@ -553,31 +579,32 @@ def _is_complex_question(question: str) -> bool:
 def _adaptive_chat_budget(question: str) -> dict[str, int]:
     if _is_complex_question(question):
         return {
-            "candidate_k": max(RETRIEVAL_CANDIDATE_K, 10),
-            "final_k": max(RETRIEVAL_FINAL_K, 5),
-            "chars_per_chunk": max(RETRIEVAL_CHARS_PER_CHUNK, 700),
-            "max_context_chars": max(RETRIEVAL_MAX_CONTEXT_CHARS, 2800),
-            "max_tokens": CHAT_MAX_TOKENS,
-            "history_messages": max(MAX_HISTORY_MESSAGES, 3),
+            "candidate_k": 12,  # Increased from 10: get more candidate docs
+            "final_k": 6,  # Increased from 5: use more relevant context
+            "chars_per_chunk": 850,  # Increased: larger context chunks
+            "max_context_chars": 3500,  # Increased from 2800: much more context
+            "max_tokens": CHAT_MAX_TOKENS_COMPLEX,  # Use 2200 tokens instead of 1600
+            "history_messages": 4,  # Include more history for context
         }
 
     if _is_short_direct_question(question):
         return {
-            "candidate_k": min(RETRIEVAL_CANDIDATE_K, 6),
-            "final_k": min(RETRIEVAL_FINAL_K, 3),
-            "chars_per_chunk": min(RETRIEVAL_CHARS_PER_CHUNK, 420),
-            "max_context_chars": min(RETRIEVAL_MAX_CONTEXT_CHARS, 1300),
-            "max_tokens": min(CHAT_MAX_TOKENS, 420),
-            "history_messages": min(MAX_HISTORY_MESSAGES, 2),
+            "candidate_k": 6,
+            "final_k": 3,
+            "chars_per_chunk": 500,
+            "max_context_chars": 1500,
+            "max_tokens": min(CHAT_MAX_TOKENS, 700),  # Still complete but concise
+            "history_messages": 2,
         }
 
+    # Medium/standard questions: balanced for quality
     return {
-        "candidate_k": min(max(RETRIEVAL_CANDIDATE_K, 8), 10),
-        "final_k": min(max(RETRIEVAL_FINAL_K, 4), 5),
-        "chars_per_chunk": min(max(RETRIEVAL_CHARS_PER_CHUNK, 550), 700),
-        "max_context_chars": min(max(RETRIEVAL_MAX_CONTEXT_CHARS, 2000), 2600),
-        "max_tokens": min(max(CHAT_MAX_TOKENS, 700), 900),
-        "history_messages": min(max(MAX_HISTORY_MESSAGES, 2), 3),
+        "candidate_k": 10,
+        "final_k": 5,
+        "chars_per_chunk": 700,
+        "max_context_chars": 2800,
+        "max_tokens": CHAT_MAX_TOKENS,  # 1600 tokens
+        "history_messages": 3,
     }
 
 
@@ -685,21 +712,28 @@ def _compact_system_prompt(*, context: str, strict_mode: bool, response_style: s
     ) if is_derivation else ""
     
     return (
-        "You are an NCERT-aligned Class 11-12 Chemistry and Physics tutor.\n"
-        "Use retrieved context first. Keep answers accurate, complete, and exam-relevant.\n"
-        "Never change the target system asked by the user (example: dipole axial field must stay dipole, not ring/disc/shell).\n"
-        "If pronouns like this/that/these appear, resolve using chat history.\n"
-        "For formulas/steps, prefer clean readable structure and natural section titles.\n"
-        "IMPORTANT equation style: write equations in plain readable text, not LaTeX code.\n"
-        "Use forms like: E = (1/(4π ε₀)) * (2p/x^3), never use { } blocks or backslash commands.\n"
-        "For derivations, give logical step-by-step progression and avoid decorative bullet spam.\n"
-        "For topic/lesson requests, provide full explanation with concepts, formulas, and examples (not short overview).\n"
-        "Never end mid-step or mid-sentence; response must end with a clear final conclusion line.\n"
+        "You are an ELITE NCERT-aligned Class 11-12 Chemistry and Physics tutor. Your goal: BEAT ChatGPT in accuracy, depth, and completeness.\n"
+        "ACCURACY FIRST:\n"
+        "- Use retrieved NCERT context as authority. Cross-check every claim.\n"
+        "- NEVER guess formulas or process steps—cite NCERT or verified physics.\n"
+        "- For Chemistry: Include reaction mechanisms, electron movement, bond energy considerations.\n"
+        "- For Physics: Include vector directions, sign conventions, coordinate system choices.\n"
+        "- ALWAYS verify numerical results with dimensional analysis and reasonability checks.\n\n"
+        "DEPTH & COMPLETENESS:\n"
+        "- For direct questions: give full answer, not abbreviated version. Add 'why this is important' context.\n"
+        "- For derivations: show EVERY mathematical step. Don't skip algebra or integration steps.\n"
+        "- For topics: provide intuition + theory + examples + exam implications (not just overview).\n"
+        "- Include related concepts, common student mistakes, and memory tricks.\n\n"
+        "PRESENTATION:\n"
+        "- Never change the target system asked (dipole stays dipole, ring stays ring, etc.).\n"
+        "- Use plain readable equations: E = (1/(4πε₀)) * (2p/x³), not LaTeX symbols or {braces}.\n"
+        "- Use clear natural section titles: Setup and symbols, Governing law, Derivation steps, etc.\n"
+        "- Resolution: If pronouns (this/that/these) appear, resolve using chat history context.\n"
+        "- NEVER end mid-step or incomplete—always provide clear final answer/conclusion.\n\n"
         f"{derivation_warning}"
-        f"If strict textbook mode is yes, do not add outside facts.\n\n"
-        f"Response style rule: {response_style}\n"
-        f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n\n"
-        f"Retrieved NCERT Context:\n{context_block}"
+        f"Response style (REQUIRED): {response_style}\n"
+        f"Strict textbook mode: {'yes (only use provided context)' if strict_mode else 'no (add related context)'}\n\n"
+        f"NCERT Context (PRIMARY SOURCE):\n{context_block}"
     )
 
 
@@ -904,23 +938,31 @@ def answer_question(question: str, history: list[dict[str, str]] | None = None) 
         finish_reason = _extract_finish_reason(correction)
 
     # If generation stopped due to length or looks cut off, request only the missing tail.
-    if finish_reason == "length" or _looks_incomplete(answer_raw):
-        continuation_llm = _chat_llm(CHAT_MODEL, min(450, CHAT_MAX_TOKENS), 0.0)
+    continuation_attempts = 0
+    max_continuations = 2  # Try up to 2 continuations for ultra-complete answers
+
+    while (finish_reason == "length" or _looks_incomplete(answer_raw)) and continuation_attempts < max_continuations:
+        continuation_attempts += 1
+        continuation_llm = _chat_llm(CHAT_MODEL, min(550, CHAT_MAX_TOKENS), 0.0)
         continuation = continuation_llm.invoke(
             [
                 *messages,
                 AIMessage(content=answer_raw),
                 HumanMessage(
                     content=(
-                        "Continue only the missing remainder from the last line. "
-                        "Do not repeat prior text. End with a clear final answer line."
+                        "Continue ONLY the missing remainder from where you stopped. "
+                        "Do NOT repeat prior text. "
+                        "Ensure the final answer is complete and ends with a clear conclusion."
                     )
                 ),
             ]
         )
         continuation_text = str(continuation.content).strip()
-        if continuation_text:
+        if continuation_text and continuation_text.lower() not in answer_raw.lower():
             answer_raw = f"{answer_raw}\n{continuation_text}".strip()
+            finish_reason = _extract_finish_reason(continuation)
+        else:
+            break  # No new content, stop trying
 
     answer = make_math_readable(answer_raw)
     answer = _finalize_answer_text(answer)
