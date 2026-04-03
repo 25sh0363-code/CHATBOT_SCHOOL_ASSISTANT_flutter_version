@@ -1057,7 +1057,7 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
       }
       final droppedCount = rawAttachments.length - attachments.length;
       final suffix = droppedCount > 0
-          ? ' (${droppedCount} large attachment${droppedCount == 1 ? '' : 's'} skipped for local save)'
+          ? ' ($droppedCount large attachment${droppedCount == 1 ? '' : 's'} skipped for local save)'
           : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Saved note: $savedTopic$suffix')),

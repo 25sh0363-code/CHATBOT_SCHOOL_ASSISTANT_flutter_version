@@ -208,7 +208,7 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
         _JourneySection(title: 'UNDERSTAND THE CONCEPT', tasks: [
           _JourneyTask(
               id: 'mat_uc_1',
-              label: 'Read through the chapter and understand the core idea',
+            label: 'Explain the method out loud as if teaching someone',
               xp: 10),
           _JourneyTask(
               id: 'mat_uc_2',
@@ -273,7 +273,7 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
         _JourneySection(title: 'MASTER & CONNECT', tasks: [
           _JourneyTask(
               id: 'mat_mc_1',
-              label: "Explain the method out loud as if teaching someone",
+              label: 'Explain the method out loud as if teaching someone',
               xp: 20),
           _JourneyTask(
               id: 'mat_mc_2',
@@ -604,34 +604,34 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
   _SubjectBadgeData _badgeForSubject(String subjectKey, String subjectLabel) {
     switch (subjectKey) {
       case 'physics':
-        return _SubjectBadgeData(
+        return const _SubjectBadgeData(
           title: 'Ace in Physics',
           icon: Icons.bolt_rounded,
-          color: const Color(0xFF1565C0),
+          color: Color(0xFF1565C0),
         );
       case 'chemistry':
-        return _SubjectBadgeData(
+        return const _SubjectBadgeData(
           title: 'Ace in Chemistry',
           icon: Icons.science_rounded,
-          color: const Color(0xFF8D3F24),
+          color: Color(0xFF8D3F24),
         );
       case 'maths':
-        return _SubjectBadgeData(
+        return const _SubjectBadgeData(
           title: 'Ace in Maths',
           icon: Icons.functions_rounded,
-          color: const Color(0xFF3949AB),
+          color: Color(0xFF3949AB),
         );
       case 'biology':
-        return _SubjectBadgeData(
+        return const _SubjectBadgeData(
           title: 'Ace in Biology',
           icon: Icons.eco_rounded,
-          color: const Color(0xFF2E7D32),
+          color: Color(0xFF2E7D32),
         );
       case 'optional':
-        return _SubjectBadgeData(
+        return const _SubjectBadgeData(
           title: 'Ace in Optional',
           icon: Icons.workspace_premium_rounded,
-          color: const Color(0xFF00695C),
+          color: Color(0xFF00695C),
         );
       default:
         return _SubjectBadgeData(
@@ -743,7 +743,7 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<int>(
-                    value: selectedXp,
+                    initialValue: selectedXp,
                     decoration: const InputDecoration(labelText: 'XP'),
                     items: const [5, 10, 15, 20, 25, 30]
                         .map(
@@ -939,7 +939,7 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
-                  value: _selectedSubject,
+                  initialValue: _selectedSubject,
                   decoration: const InputDecoration(labelText: 'Subject'),
                   items: _templates.values
                       .map(

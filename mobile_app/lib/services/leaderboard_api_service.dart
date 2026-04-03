@@ -29,7 +29,7 @@ class LeaderboardApiService {
         '_ts': DateTime.now().millisecondsSinceEpoch.toString(),
       },
     );
-    final getResponse = await _client.get(getUri);
+    final getResponse = await _getWithAppsScriptRedirect(getUri);
     if (getResponse.statusCode < 200 || getResponse.statusCode >= 300) {
       throw Exception('Submit failed: ${getResponse.statusCode} ${_preview(getResponse.body)}');
     }
@@ -60,7 +60,7 @@ class LeaderboardApiService {
         '_ts': DateTime.now().millisecondsSinceEpoch.toString(),
       },
     );
-    final getResponse = await _client.get(getUri);
+    final getResponse = await _getWithAppsScriptRedirect(getUri);
     if (getResponse.statusCode < 200 || getResponse.statusCode >= 300) {
       throw Exception('Delete failed: ${getResponse.statusCode} ${_preview(getResponse.body)}');
     }
@@ -111,11 +111,20 @@ class LeaderboardApiService {
       },
     );
 
-    final getResponse = await _client.get(uri);
+    final getResponse = await _getWithAppsScriptRedirect(uri);
     if (getResponse.statusCode >= 200 && getResponse.statusCode < 300) {
       try {
         return jsonDecode(getResponse.body);
       } catch (_) {
+        final bodyPreview = _preview(getResponse.body);
+        if (bodyPreview.startsWith('<!DOCTYPE html>') ||
+            bodyPreview.startsWith('<html') ||
+            bodyPreview.contains('script.google.com')) {
+          throw Exception(
+            'Apps Script deployment returned HTML instead of JSON for $action. '
+            'Open the deployed /exec web app URL and make sure doGet/doPost are published.',
+          );
+        }
         // Fall back to POST when Apps Script is deployed with doPost only.
       }
     }
@@ -136,6 +145,15 @@ class LeaderboardApiService {
     try {
       return jsonDecode(postResponse.body);
     } catch (_) {
+      final bodyPreview = _preview(postResponse.body);
+      if (bodyPreview.startsWith('<!DOCTYPE html>') ||
+          bodyPreview.startsWith('<html') ||
+          bodyPreview.contains('script.google.com')) {
+        throw Exception(
+          'Apps Script deployment returned HTML instead of JSON for $action. '
+          'The leaderboard web app likely needs redeployment or a corrected /exec URL.',
+        );
+      }
       throw Exception(
         '$action returned non-JSON response: ${_preview(postResponse.body)}',
       );
@@ -148,6 +166,44 @@ class LeaderboardApiService {
       return compact;
     }
     return '${compact.substring(0, 160)}...';
+  }
+
+  Future<http.Response> _getWithAppsScriptRedirect(Uri uri) async {
+    final response = await _client.get(uri);
+
+    // Some Apps Script deployments respond with an HTML "Moved Temporarily"
+    // page that contains a script.googleusercontent.com redirect URL.
+    final redirectFromHtml = _extractHtmlRedirect(response.body);
+    if (redirectFromHtml != null) {
+      final redirected = await _client.get(redirectFromHtml);
+      return redirected;
+    }
+
+    // If HTTP redirect is exposed without auto-follow, follow one hop.
+    if (response.statusCode >= 300 && response.statusCode < 400) {
+      final location = response.headers['location'];
+      if (location != null && location.trim().isNotEmpty) {
+        final redirected = await _client.get(Uri.parse(location));
+        return redirected;
+      }
+    }
+
+    return response;
+  }
+
+  Uri? _extractHtmlRedirect(String body) {
+    final compact = body.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (!compact.toLowerCase().contains('moved temporarily')) {
+      return null;
+    }
+
+    final href = RegExp(r'href="([^"]+)"', caseSensitive: false)
+        .firstMatch(body)
+        ?.group(1);
+    if (href == null || href.isEmpty) {
+      return null;
+    }
+    return Uri.tryParse(href);
   }
 
   Map<String, dynamic>? _tryDecodeMap(String body) {
@@ -206,7 +262,7 @@ class LeaderboardApiService {
       subject: subject,
       percentage: percentageValue,
       createdAt: createdAt,
-      testTitle: title == null ? null : title.toString(),
+      testTitle: title?.toString(),
     );
   }
 

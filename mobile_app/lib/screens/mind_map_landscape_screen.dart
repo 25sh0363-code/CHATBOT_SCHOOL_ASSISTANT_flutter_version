@@ -485,8 +485,8 @@ class _MindMapCanvasState extends State<_MindMapCanvas> {
     final dy = (constraints.maxHeight - (canvasHeight * scale)) / 2;
 
     _transformController.value = Matrix4.identity()
-      ..translate(dx, dy)
-      ..scale(scale);
+      ..translateByDouble(dx, dy, 0, 1)
+      ..scaleByDouble(scale, scale, 1, 1);
   }
 
   @override
@@ -494,8 +494,8 @@ class _MindMapCanvasState extends State<_MindMapCanvas> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxTreeDepth = _maxBranchDepth(widget.map.branches) + 1;
-        final levelGap = 136.0;
-        final topY = 94.0;
+        const levelGap = 136.0;
+        const topY = 94.0;
 
         double nodeWidthForDepth(int depth) {
           if (depth == 0) {

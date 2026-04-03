@@ -43,12 +43,33 @@ class _NotesScreenState extends State<NotesScreen> {
 
   Future<void> _load() async {
     final items = await widget.storeService.loadQuickNotes();
+    final mindMaps = await widget.storeService.loadMindMaps();
+    final mindMapSignatures = mindMaps
+        .map((map) => _noteSignature(map.topic, map.content))
+        .toSet();
+    final filteredItems = items
+        .where(
+          (note) =>
+              !mindMapSignatures.contains(_noteSignature(note.topic, note.content)),
+        )
+        .toList();
+
+    if (filteredItems.length != items.length) {
+      await widget.storeService.saveQuickNotes(filteredItems);
+    }
+
     if (!mounted) {
       return;
     }
     setState(() {
-      _notes = items;
+      _notes = filteredItems;
     });
+  }
+
+  String _noteSignature(String topic, String content) {
+    final normalizedTopic = topic.trim().toLowerCase();
+    final normalizedContent = content.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase();
+    return '$normalizedTopic|$normalizedContent';
   }
 
   Future<void> _save() async {
@@ -535,7 +556,7 @@ class _NotesScreenState extends State<NotesScreen> {
                                       fontWeight: FontWeight.w700,
                                       fontSize: 22,
                                       height: 1.3,
-                                      color: Color(0xFF1E88E5),
+                                      color: const Color(0xFF1E88E5),
                                     ),
                                 h2: Theme.of(context)
                                     .textTheme
@@ -544,7 +565,7 @@ class _NotesScreenState extends State<NotesScreen> {
                                       fontWeight: FontWeight.w600,
                                       fontSize: 18,
                                       height: 1.4,
-                                      color: Color(0xFF43A047),
+                                      color: const Color(0xFF43A047),
                                     ),
                                 h3: Theme.of(context)
                                     .textTheme
@@ -553,7 +574,7 @@ class _NotesScreenState extends State<NotesScreen> {
                                       fontWeight: FontWeight.w600,
                                       fontSize: 15,
                                       height: 1.4,
-                                      color: Color(0xFFFF6F00),
+                                      color: const Color(0xFFFF6F00),
                                     ),
                                 listBullet: Theme.of(context)
                                     .textTheme
@@ -565,14 +586,14 @@ class _NotesScreenState extends State<NotesScreen> {
                                     .bodyLarge
                                     ?.copyWith(
                                       fontStyle: FontStyle.italic,
-                                      color: Color(0xFFC62828),
+                                      color: const Color(0xFFC62828),
                                     ),
                                 strong: Theme.of(context)
                                     .textTheme
                                     .bodyLarge
                                     ?.copyWith(
                                       fontWeight: FontWeight.w700,
-                                      color: Color(0xFF6A1B9A),
+                                      color: const Color(0xFF6A1B9A),
                                     ),
                               ),
                             ),
@@ -633,7 +654,7 @@ class _NotesScreenState extends State<NotesScreen> {
                                     fontWeight: FontWeight.w700,
                                     fontSize: 22,
                                     height: 1.3,
-                                    color: Color(0xFF1E88E5),
+                                    color: const Color(0xFF1E88E5),
                                   ),
                               h2: Theme.of(context)
                                   .textTheme
@@ -642,7 +663,7 @@ class _NotesScreenState extends State<NotesScreen> {
                                     fontWeight: FontWeight.w600,
                                     fontSize: 18,
                                     height: 1.4,
-                                    color: Color(0xFF43A047),
+                                    color: const Color(0xFF43A047),
                                   ),
                               h3: Theme.of(context)
                                   .textTheme
@@ -651,7 +672,7 @@ class _NotesScreenState extends State<NotesScreen> {
                                     fontWeight: FontWeight.w600,
                                     fontSize: 15,
                                     height: 1.4,
-                                    color: Color(0xFFFF6F00),
+                                    color: const Color(0xFFFF6F00),
                                   ),
                               listBullet: Theme.of(context)
                                   .textTheme
@@ -675,21 +696,21 @@ class _NotesScreenState extends State<NotesScreen> {
                                   ?.copyWith(
                                     fontFamily: 'monospace',
                                     height: 1.4,
-                                    backgroundColor: Color(0xFFF5F5F5),
+                                    backgroundColor: const Color(0xFFF5F5F5),
                                   ),
                               em: Theme.of(context)
                                   .textTheme
                                   .bodyLarge
                                   ?.copyWith(
                                     fontStyle: FontStyle.italic,
-                                    color: Color(0xFFC62828),
+                                    color: const Color(0xFFC62828),
                                   ),
                               strong: Theme.of(context)
                                   .textTheme
                                   .bodyLarge
                                   ?.copyWith(
                                     fontWeight: FontWeight.w700,
-                                    color: Color(0xFF6A1B9A),
+                                    color: const Color(0xFF6A1B9A),
                                   ),
                             ),
                           ),

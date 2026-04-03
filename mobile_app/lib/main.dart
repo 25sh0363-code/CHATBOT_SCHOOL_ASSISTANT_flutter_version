@@ -156,97 +156,186 @@ class _SchoolAssistantAppState extends State<SchoolAssistantApp> {
   }
 }
 
-class _FocusTimerOverlay extends StatelessWidget {
+class _FocusTimerOverlay extends StatefulWidget {
   const _FocusTimerOverlay();
+
+  @override
+  State<_FocusTimerOverlay> createState() => _FocusTimerOverlayState();
+}
+
+class _FocusTimerOverlayState extends State<_FocusTimerOverlay> {
+  Offset? _position;
+  bool _minimized = false;
+
+  void _initPositionIfNeeded(BoxConstraints constraints, double width) {
+    if (_position != null) {
+      return;
+    }
+    final x = (constraints.maxWidth - width - 12).clamp(0.0, double.infinity);
+    _position = Offset(x, 12);
+  }
+
+  void _moveBy(Offset delta, BoxConstraints constraints, Size size) {
+    final current = _position ?? const Offset(12, 12);
+    final maxX = (constraints.maxWidth - size.width).clamp(0.0, double.infinity);
+    final maxY = (constraints.maxHeight - size.height).clamp(0.0, double.infinity);
+    final nextX = (current.dx + delta.dx).clamp(0.0, maxX);
+    final nextY = (current.dy + delta.dy).clamp(0.0, maxY);
+    setState(() {
+      _position = Offset(nextX, nextY);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return SafeArea(
-      child: Align(
-        alignment: Alignment.topRight,
-        child: ValueListenableBuilder<Duration>(
-          valueListenable: FocusTimerService.instance.remaining,
-          builder: (context, remaining, _) {
-            if (remaining <= Duration.zero) return const SizedBox.shrink();
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return ValueListenableBuilder<Duration>(
+            valueListenable: FocusTimerService.instance.remaining,
+            builder: (context, remaining, _) {
+              if (remaining <= Duration.zero) {
+                return const SizedBox.shrink();
+              }
 
-            final minutes = remaining.inMinutes.toString().padLeft(2, '0');
-            final seconds =
-                (remaining.inSeconds % 60).toString().padLeft(2, '0');
+              final minutes = remaining.inMinutes.toString().padLeft(2, '0');
+              final seconds =
+                  (remaining.inSeconds % 60).toString().padLeft(2, '0');
 
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: Material(
-                elevation: 10,
-                color: Colors.transparent,
-                child: Container(
-                  width: 172,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surface,
-                    borderRadius: BorderRadius.circular(18),
-                    border:
-                        Border.all(color: theme.colorScheme.outlineVariant),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.timer_outlined,
-                              color: theme.colorScheme.primary, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Focus Mode',
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
+              const expandedSize = Size(172, 188);
+              const minimizedSize = Size(72, 52);
+              final boxSize = _minimized ? minimizedSize : expandedSize;
+              _initPositionIfNeeded(constraints, boxSize.width);
+
+              return Stack(
+                children: [
+                  Positioned(
+                    left: _position?.dx ?? 12,
+                    top: _position?.dy ?? 12,
+                    child: GestureDetector(
+                      onPanUpdate: (details) =>
+                          _moveBy(details.delta, constraints, boxSize),
+                      child: Material(
+                        elevation: 10,
+                        color: Colors.transparent,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: boxSize.width,
+                          padding: _minimized
+                              ? const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                )
+                              : const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(18),
+                            border:
+                                Border.all(color: theme.colorScheme.outlineVariant),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.12),
+                                blurRadius: 20,
+                                offset: const Offset(0, 10),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Center(
-                        child: Text(
-                          '$minutes:$seconds',
-                          style: theme.textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: theme.colorScheme.primary,
-                          ),
+                          child: _minimized
+                              ? InkWell(
+                                  onTap: () {
+                                    setState(() => _minimized = false);
+                                  },
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.timer_outlined,
+                                        color: theme.colorScheme.primary,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          '$minutes:$seconds',
+                                          style: theme.textTheme.labelSmall?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                          overflow: TextOverflow.fade,
+                                          softWrap: false,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.timer_outlined,
+                                          color: theme.colorScheme.primary,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'Focus Mode',
+                                            style: theme.textTheme.titleSmall?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.minimize, size: 18),
+                                          tooltip: 'Minimize',
+                                          visualDensity: VisualDensity.compact,
+                                          onPressed: () {
+                                            setState(() => _minimized = true);
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Center(
+                                      child: Text(
+                                        '$minutes:$seconds',
+                                        style: theme.textTheme.headlineMedium?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Drag to move. Timer keeps running while you use the app.',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => FocusTimerService.instance.stop(),
+                                        icon: const Icon(Icons.stop_circle_outlined),
+                                        label: const Text('Stop'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Timer keeps running while you use the app.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () => FocusTimerService.instance.stop(),
-                          icon: const Icon(Icons.stop_circle_outlined),
-                          label: const Text('Stop'),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            );
-          },
-        ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
   }

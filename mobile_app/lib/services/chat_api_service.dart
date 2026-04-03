@@ -122,6 +122,38 @@ class ChatApiService {
     return _readAnswer(data);
   }
 
+  Future<String> sendMessageWithImages({
+    required String question,
+    required List<NoteGenerationAttachment> attachments,
+    List<Map<String, String>>? history,
+  }) async {
+    final uri = Uri.parse('$baseUrl/chat/images');
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'question': question,
+        'attachments': attachments
+            .map(
+              (a) => {
+                'name': a.name,
+                'base64_data': a.base64Data,
+                'mime_type': a.mimeType,
+              },
+            )
+            .toList(),
+        'history': history ?? [],
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error ${response.statusCode}: ${response.body}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return _readAnswer(data);
+  }
+
   String _readAnswer(Map<String, dynamic> data) {
     final answer = data['answer'];
     if (answer is! String || answer.trim().isEmpty) {

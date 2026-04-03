@@ -23,9 +23,25 @@ class _WorksheetScreenState extends State<WorksheetScreen> {
   final TextEditingController _questionsController = TextEditingController();
 
   final ChatApiService _chatService = ChatApiService(baseUrl: AppConfig.backendBaseUrl);
+  static const List<String> _difficultyOptions = <String>[
+    'Easy',
+    'Medium',
+    'Hard',
+    'Mixed',
+  ];
+  static const List<String> _questionTypeOptions = <String>[
+    'MCQs',
+    'PYQs',
+    'Short Answer',
+    '3 Marks',
+    '4 Marks',
+    '5 Marks',
+  ];
 
   List<WorksheetRecord> _worksheets = <WorksheetRecord>[];
   bool _generating = false;
+  String _selectedDifficulty = 'Medium';
+  final Set<String> _selectedQuestionTypes = <String>{'MCQs'};
 
   @override
   void initState() {
@@ -60,9 +76,12 @@ class _WorksheetScreenState extends State<WorksheetScreen> {
 
     setState(() => _generating = true);
     try {
+      final typesText = _selectedQuestionTypes.join(', ');
       final prompt =
-          'Create $count school-level $subject worksheet questions on topic: $topic. '
-          'Return only numbered questions in plain text.';
+        'Create $count school-level $subject worksheet questions on topic: $topic. '
+        'Difficulty: $_selectedDifficulty. '
+        'Question types to include: $typesText. '
+        'Return only numbered questions in plain text.';
       final answer = await _chatService.sendMessage(prompt);
       if (!mounted) {
         return;
@@ -191,6 +210,53 @@ class _WorksheetScreenState extends State<WorksheetScreen> {
                     controller: _countController,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: 'Question count for AI draft'),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedDifficulty,
+                    decoration: const InputDecoration(labelText: 'Difficulty'),
+                    items: _difficultyOptions
+                        .map(
+                          (level) => DropdownMenuItem<String>(
+                            value: level,
+                            child: Text(level),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) {
+                        return;
+                      }
+                      setState(() => _selectedDifficulty = value);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Question types (choose multiple)',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _questionTypeOptions.map((type) {
+                      final selected = _selectedQuestionTypes.contains(type);
+                      return FilterChip(
+                        label: Text(type),
+                        selected: selected,
+                        onSelected: (on) {
+                          setState(() {
+                            if (on) {
+                              _selectedQuestionTypes.add(type);
+                              return;
+                            }
+                            if (_selectedQuestionTypes.length > 1) {
+                              _selectedQuestionTypes.remove(type);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
                   ),
                   const SizedBox(height: 10),
                   Row(

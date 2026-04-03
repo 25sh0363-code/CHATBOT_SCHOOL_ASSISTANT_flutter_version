@@ -75,6 +75,12 @@ class NoteAttachment(BaseModel):
     mime_type: str = Field(min_length=3, max_length=120)
 
 
+class MultiImageChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=3000)
+    attachments: list[NoteAttachment] = Field(default_factory=list)
+    history: list[dict[str, str]] = Field(default_factory=list)
+
+
 class NotesGenerationRequest(BaseModel):
     topic: str = Field(min_length=1, max_length=200)
     details: str = Field(default="", max_length=5000)
@@ -1061,6 +1067,94 @@ def answer_question_with_image(question: str, image_base64: str, mime_type: str,
     )
 
 
+def answer_question_with_images(
+    question: str,
+    attachments: list[NoteAttachment],
+    history: list[dict[str, str]] | None = None,
+) -> ChatResponse:
+    if history is None:
+        history = []
+
+    if not attachments:
+        raise ValueError("At least one image attachment is required.")
+
+    budget = _adaptive_chat_budget(question)
+    history = trim_history(history)[-budget["history_messages"] :]
+
+    normalized_question = " ".join(question.strip().lower().split())
+    context, chunk_count = _cached_retrieved_context(
+        normalized_question,
+        budget["candidate_k"],
+        budget["final_k"],
+        budget["chars_per_chunk"],
+        budget["max_context_chars"],
+    )
+    used_context = bool(context.strip())
+    strict_mode = is_textbook_only_mode(question)
+
+    if strict_mode and not used_context:
+        return ChatResponse(
+            answer="The provided materials do not contain information relevant to this question.",
+            used_context=False,
+            context_chunks=0,
+        )
+
+    response_style = _response_style_instructions(question)
+
+    prompt_text = (
+        "You are an expert chemistry and physics tutor. Analyze the attached images and answer the question.\n"
+        "Use retrieved context first where applicable and stay NCERT-aligned.\n"
+        "Interpret formulas/graphs/diagrams clearly.\n"
+        "Use markdown when helpful but keep concise for direct questions.\n"
+        "Write equations in plain readable form (example: E = (1/(4pi e0)) * (2p/x^3)); avoid LaTeX commands and braces.\n\n"
+        f"Response style rule: {response_style}\n"
+        f"Retrieved context:\n{context if used_context else 'No additional context retrieved.'}\n\n"
+        f"Strict textbook mode: {'yes' if strict_mode else 'no'}\n"
+    )
+
+    if history:
+        prompt_text += "\nConversation history:\n"
+        for msg in history:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            prompt_text += f"{role}: {content}\n"
+        prompt_text += "\n"
+
+    prompt_text += f"Current question: {question}"
+
+    content_parts: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
+    for attachment in attachments:
+        mime = attachment.mime_type.strip() or "image/jpeg"
+        if not mime.lower().startswith("image/"):
+            raise ValueError(f"Unsupported attachment mime type for image chat: {mime}")
+        base64.b64decode(attachment.base64_data, validate=True)
+        content_parts.append(
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{mime};base64,{attachment.base64_data}",
+                },
+            }
+        )
+
+    vision_llm = _chat_llm(
+        VISION_CHAT_MODEL,
+        min(VISION_CHAT_MAX_TOKENS, budget["max_tokens"] + 200),
+        0.0,
+    )
+    ai_message = vision_llm.invoke([HumanMessage(content=content_parts)])
+
+    answer = make_math_readable(str(ai_message.content).strip())
+    answer = _finalize_answer_text(answer)
+    answer = strip_source_citations(answer)
+
+    return ChatResponse(
+        answer=answer,
+        used_context=used_context,
+        context_chunks=chunk_count,
+    )
+
+
 def _extract_pdf_text(attachment: NoteAttachment) -> str:
     data = base64.b64decode(attachment.base64_data, validate=True)
     reader = PdfReader(io.BytesIO(data))
@@ -1334,6 +1428,22 @@ def chat_with_image(payload: ImageChatRequest) -> ChatResponse:
             question=payload.question.strip(),
             image_base64=payload.image_base64.strip(),
             mime_type=payload.mime_type.strip() or "image/jpeg",
+            history=payload.history,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid image payload: {exc}") from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Image chat failed: {exc}") from exc
+
+
+@app.post("/chat/images", response_model=ChatResponse)
+def chat_with_images(payload: MultiImageChatRequest) -> ChatResponse:
+    try:
+        return answer_question_with_images(
+            question=payload.question.strip(),
+            attachments=payload.attachments,
             history=payload.history,
         )
     except ValueError as exc:

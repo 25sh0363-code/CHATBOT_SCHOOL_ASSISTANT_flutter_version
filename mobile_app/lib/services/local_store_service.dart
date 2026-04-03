@@ -36,6 +36,7 @@ class LocalStoreService {
   static const String _mindMapsKey = 'mind_maps_v1';
   static const String _darkModeKey = 'dark_mode_v1';
   static const String _chatHistoryKey = 'chat_history_v1';
+  static const String _chatSessionsKey = 'chat_sessions_v1';
   static const String _quickNotesKey = 'quick_notes_v1';
   static const String _homeworkTasksKey = 'homework_tasks_v1';
   static const String _examEventsKey = 'exam_events_v1';
@@ -154,6 +155,30 @@ class LocalStoreService {
   Future<void> clearChatHistory() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_chatHistoryKey);
+  }
+
+  Future<Map<String, dynamic>?> loadChatSessionsPayload() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_chatSessionsKey);
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      return null;
+    }
+    return decoded;
+  }
+
+  Future<void> saveChatSessionsPayload(Map<String, dynamic> payload) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_chatSessionsKey, jsonEncode(payload));
+  }
+
+  Future<void> clearChatSessionsPayload() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_chatSessionsKey);
   }
 
   Future<List<QuickNote>> loadQuickNotes() async {
