@@ -20,8 +20,8 @@ class QuickNoteAttachment {
   factory QuickNoteAttachment.fromJson(Map<String, dynamic> json) {
     return QuickNoteAttachment(
       name: json['name'] as String? ?? '',
-      base64Data: json['base64Data'] as String? ?? '',
-      mimeType: json['mimeType'] as String? ?? 'application/octet-stream',
+      base64Data: (json['base64Data'] ?? json['base64_data']) as String? ?? '',
+      mimeType: (json['mimeType'] ?? json['mime_type']) as String? ?? 'application/octet-stream',
     );
   }
 }
@@ -73,11 +73,11 @@ class QuickNote {
 
   factory QuickNote.fromJson(Map<String, dynamic> json) {
     return QuickNote(
-      id: json['id'] as String,
-      topic: json['topic'] as String,
-      content: json['content'] as String,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      id: (json['id'] ?? '') as String,
+      topic: (json['topic'] ?? '') as String,
+      content: (json['content'] ?? '') as String,
+      createdAt: DateTime.parse((json['createdAt'] ?? json['created_at']) as String),
+      updatedAt: DateTime.parse((json['updatedAt'] ?? json['updated_at']) as String),
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(QuickNoteAttachment.fromJson)

@@ -27,6 +27,8 @@ class CollabScreen extends StatefulWidget {
 
 class _CollabScreenState extends State<CollabScreen> {
   late final CollabApiService _collabApi;
+  static const String _cloudBackendFallback =
+      'https://school-assistant-backend.onrender.com';
 
   CollabUser? _user;
   List<CollabRoom> _rooms = <CollabRoom>[];
@@ -35,8 +37,30 @@ class _CollabScreenState extends State<CollabScreen> {
   @override
   void initState() {
     super.initState();
-    _collabApi = CollabApiService(baseUrl: AppConfig.backendBaseUrl);
+    _collabApi = CollabApiService(baseUrl: _resolveCollabBaseUrl());
     _restoreUser();
+  }
+
+  String _resolveCollabBaseUrl() {
+    final configured = AppConfig.backendBaseUrl.trim();
+    final uri = Uri.tryParse(configured);
+    final host = (uri?.host ?? '').toLowerCase();
+    final compact = configured.toLowerCase();
+    final isLocalHost =
+        host == '127.0.0.1' ||
+        host == 'localhost' ||
+        host == '0.0.0.0' ||
+        host == '10.0.2.2' ||
+        compact.contains('127.0.0.1') ||
+        compact.contains('localhost') ||
+        compact.contains('0.0.0.0') ||
+        compact.contains('10.0.2.2');
+
+    // On physical devices and desktop apps localhost backend is usually unreachable.
+    if (isLocalHost && (Platform.isMacOS || Platform.isIOS || Platform.isAndroid)) {
+      return _cloudBackendFallback;
+    }
+    return configured;
   }
 
   Future<void> _restoreUser() async {
@@ -484,6 +508,43 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
 
   bool get _isOwner => (_room ?? widget.room).ownerEmail == widget.user.email;
 
+  bool _isOwnMessage(CollabMessage message) {
+    return message.senderEmail.trim().toLowerCase() ==
+        widget.user.email.trim().toLowerCase();
+  }
+
+  String _timeLabel(String raw) {
+    final parsed = DateTime.tryParse(raw)?.toLocal();
+    if (parsed == null) {
+      return '';
+    }
+    final hour = parsed.hour % 12 == 0 ? 12 : parsed.hour % 12;
+    final minute = parsed.minute.toString().padLeft(2, '0');
+    final amPm = parsed.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $amPm';
+  }
+
+  Color _bubbleColor(bool own, bool isDark, BuildContext context) {
+    if (own) {
+      return isDark ? const Color(0xFF1C4160) : const Color(0xFFD7EEFF);
+    }
+    return isDark ? const Color(0xFF1D2B3A) : const Color(0xFFF3F7FC);
+  }
+
+  Color _metaColor(bool own, bool isDark) {
+    if (own) {
+      return isDark ? const Color(0xFFA9D9FF) : const Color(0xFF245A86);
+    }
+    return isDark ? const Color(0xFF9EB4C8) : const Color(0xFF5B738A);
+  }
+
+  Color _textColor(bool own, bool isDark) {
+    if (own) {
+      return isDark ? const Color(0xFFEAF5FF) : const Color(0xFF132B40);
+    }
+    return isDark ? const Color(0xFFE5EEF8) : const Color(0xFF1E2B38);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -697,13 +758,23 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
   }
 
   String _normalizeMeetLink(String input) {
-    final trimmed = input.trim();
+    final trimmed = input.trim().replaceAll(RegExp(r'\s+'), '');
     if (trimmed.isEmpty) {
       return '';
     }
 
+    // Support pasting only the room code (abc-defg-hij).
+    final meetCodePattern = RegExp(r'^[a-z]{3}-[a-z]{4}-[a-z]{3}$', caseSensitive: false);
+    if (meetCodePattern.hasMatch(trimmed)) {
+      return 'https://meet.google.com/${trimmed.toLowerCase()}';
+    }
+
     final parsed = Uri.tryParse(trimmed);
     if (parsed != null && parsed.hasScheme) {
+      // Ensure meet links use https so external browsers/apps can resolve them.
+      if (parsed.host.toLowerCase().contains('meet.google.com')) {
+        return parsed.replace(scheme: 'https').toString();
+      }
       return trimmed;
     }
 
@@ -945,14 +1016,6 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
         }
       }
 
-      final verification = await widget.storeService.loadQuickNotes();
-      final exists = verification.any(
-        (note) => note.id == noteId,
-      );
-      if (!exists) {
-        throw Exception('Verification failed.');
-      }
-
       if (!mounted) {
         return;
       }
@@ -1074,20 +1137,17 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
       return;
     }
 
-    final canLaunch = await canLaunchUrl(uri);
-    if (!canLaunch) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open Meet link on this device.')),
-      );
-      return;
-    }
-
-    final launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+    var launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!launched) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+    }
+    if (!launched) {
+      launched = await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+    }
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open Meet link: $link')),
+      );
     }
   }
 
@@ -1164,6 +1224,7 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
   @override
   Widget build(BuildContext context) {
     final room = _room ?? widget.room;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
@@ -1191,31 +1252,67 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             color: Theme.of(context)
                 .colorScheme
                 .primaryContainer
                 .withValues(alpha: 0.4),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Chip(label: Text('${room.memberCount} members')),
-                if (room.members.isNotEmpty)
-                  ...room.members.take(4).map(
-                        (member) => Chip(label: Text(member.name)),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Chip(label: Text('${room.memberCount} members')),
+                      const SizedBox(width: 8),
+                      if (room.meetLink.isNotEmpty)
+                        const Chip(label: Text('Meet link ready')),
+                      const SizedBox(width: 12),
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : _shareNote,
+                        icon: const Icon(Icons.sticky_note_2_outlined, size: 18),
+                        label: const Text('Share Note'),
                       ),
-                if (room.meetLink.isNotEmpty)
-                  const Chip(label: Text('Meet link ready')),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _shareNote,
-                  icon: const Icon(Icons.sticky_note_2_outlined),
-                  label: const Text('Share Note'),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : _shareWorksheet,
+                        icon: const Icon(Icons.description_outlined, size: 18),
+                        label: const Text('Share Worksheet'),
+                      ),
+                    ],
+                  ),
                 ),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _shareWorksheet,
-                  icon: const Icon(Icons.description_outlined),
-                  label: const Text('Share Worksheet'),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 38,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    children: [
+                      if (room.members.isNotEmpty)
+                        ...room.members.take(6).map(
+                              (member) => Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: Chip(
+                                  visualDensity: VisualDensity.compact,
+                                  label: Text(member.name),
+                                ),
+                              ),
+                            ),
+                      if (room.memberCount > 6)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Chip(
+                            visualDensity: VisualDensity.compact,
+                            label: Text('+${room.memberCount - 6} more'),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1225,18 +1322,118 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
                 ? const Center(child: CircularProgressIndicator())
                 : ListView.builder(
                     controller: _scrollController,
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
                     itemCount: _messages.length,
                     itemBuilder: (_, index) {
                       final message = _messages[index];
                       final action = _messageAction(message);
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          title: Text(
-                              '${message.senderName} • ${message.messageType}'),
-                          subtitle: _buildMessageBody(message),
-                          trailing: action,
+                      final own = _isOwnMessage(message);
+                      final bubbleColor = _bubbleColor(own, isDark, context);
+                      final textColor = _textColor(own, isDark);
+                      final metaColor = _metaColor(own, isDark);
+                      final timeLabel = _timeLabel(message.createdAt);
+
+                      return Align(
+                        alignment:
+                            own ? Alignment.centerRight : Alignment.centerLeft,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 640),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                            decoration: BoxDecoration(
+                              color: bubbleColor,
+                              borderRadius: BorderRadius.only(
+                                topLeft: const Radius.circular(18),
+                                topRight: const Radius.circular(18),
+                                bottomLeft: Radius.circular(own ? 18 : 6),
+                                bottomRight: Radius.circular(own ? 6 : 18),
+                              ),
+                              border: Border.all(
+                                color: (own
+                                        ? const Color(0xFF6BB9FF)
+                                        : const Color(0xFF6E88A2))
+                                    .withValues(alpha: isDark ? 0.24 : 0.18),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black
+                                      .withValues(alpha: isDark ? 0.18 : 0.05),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        message.senderName,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelLarge
+                                            ?.copyWith(
+                                              color: metaColor,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: metaColor.withValues(alpha: 0.13),
+                                        borderRadius: BorderRadius.circular(999),
+                                      ),
+                                      child: Text(
+                                        message.messageType,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(
+                                              color: metaColor,
+                                              fontWeight: FontWeight.w700,
+                                              letterSpacing: 0.2,
+                                            ),
+                                      ),
+                                    ),
+                                    if (timeLabel.isNotEmpty) ...[
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        timeLabel,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(
+                                              color:
+                                                  metaColor.withValues(alpha: 0.9),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                DefaultTextStyle.merge(
+                                  style: TextStyle(color: textColor, height: 1.35),
+                                  child: _buildMessageBody(message),
+                                ),
+                                if (action != null) ...[
+                                  const SizedBox(height: 8),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: action,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
                         ),
                       );
                     },
@@ -1247,18 +1444,34 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
             child: Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    decoration: const InputDecoration(
-                      hintText: 'Write a message...',
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color:
+                          isDark ? const Color(0xFF132031) : const Color(0xFFFFFFFF),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF2A4158)
+                            : const Color(0xFFD6E5F3),
+                      ),
                     ),
-                    onSubmitted: (_) => _sendMessage(),
+                    child: TextField(
+                      controller: _messageController,
+                      decoration: const InputDecoration(
+                        hintText: 'Write a message...',
+                        border: InputBorder.none,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                      onSubmitted: (_) => _sendMessage(),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(
+                FilledButton.icon(
                   onPressed: _busy ? null : _sendMessage,
-                  child: const Text('Send'),
+                  icon: const Icon(Icons.send_rounded, size: 16),
+                  label: const Text('Send'),
                 ),
               ],
             ),
@@ -1279,10 +1492,12 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
         children: [
           Text(
             topic,
-            style: Theme.of(context).textTheme.titleSmall,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
           ),
           const SizedBox(height: 4),
-          Text(_notePreview(content)),
+          Text(_notePreview(content), style: const TextStyle(height: 1.4)),
           if (attachments.isNotEmpty) ...[
             const SizedBox(height: 8),
             Wrap(
@@ -1321,7 +1536,9 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
         children: [
           Text(
             title,
-            style: Theme.of(context).textTheme.titleSmall,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
           ),
           if (subject.isNotEmpty || topic.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -1330,7 +1547,7 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
           ],
           if (preview.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text(preview),
+            Text(preview, style: const TextStyle(height: 1.35)),
           ],
         ],
       );

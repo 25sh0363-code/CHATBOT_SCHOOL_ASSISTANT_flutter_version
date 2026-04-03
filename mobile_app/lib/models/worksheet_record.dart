@@ -29,11 +29,11 @@ class WorksheetRecord {
   factory WorksheetRecord.fromJson(Map<String, dynamic> json) {
     final dynamic rawQuestions = json['questions'];
     return WorksheetRecord(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      subject: json['subject'] as String,
-      topic: json['topic'] as String,
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      id: (json['id'] ?? '') as String,
+      title: (json['title'] ?? '') as String,
+      subject: (json['subject'] ?? '') as String,
+      topic: (json['topic'] ?? '') as String,
+      createdAt: DateTime.parse((json['createdAt'] ?? json['created_at']) as String),
       questions: rawQuestions is List
           ? rawQuestions.map((e) => e.toString()).toList()
           : <String>[],

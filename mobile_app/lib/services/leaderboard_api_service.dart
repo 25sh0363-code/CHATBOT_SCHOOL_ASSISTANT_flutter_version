@@ -15,61 +15,38 @@ class LeaderboardApiService {
 
   Future<void> submitResult(SharedTestResult result) async {
     final uri = Uri.parse(baseUrl);
-    final response = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
+
+    // Apps Script /exec redirects POST, so use GET directly for submit
+    final getUri = uri.replace(
+      queryParameters: {
         'action': 'submit_result',
         'id': result.id,
         'student_name': result.studentName,
         'subject': result.subject,
-        'percentage': result.percentage,
-        'test_title': result.testTitle,
+        'percentage': result.percentage.toString(),
+        if (result.testTitle != null) 'test_title': result.testTitle!,
         'created_at': result.createdAt.toIso8601String(),
-      }),
+        '_ts': DateTime.now().millisecondsSinceEpoch.toString(),
+      },
     );
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Submit failed: ${response.statusCode} ${response.body}');
+    final getResponse = await _client.get(getUri);
+    if (getResponse.statusCode < 200 || getResponse.statusCode >= 300) {
+      throw Exception('Submit failed: ${getResponse.statusCode} ${_preview(getResponse.body)}');
     }
 
-    final decoded = _tryDecodeMap(response.body);
-    if (decoded != null && decoded['ok'] == false) {
-      throw Exception('Submit failed: ${decoded['error'] ?? _preview(response.body)}');
+    final decoded = _tryDecodeMap(getResponse.body);
+    final isSuccess = decoded == null ||
+        decoded['ok'] == true ||
+        decoded['status'] == 'ok';
+    if (!isSuccess) {
+      throw Exception('Submit failed: ${decoded['error'] ?? _preview(getResponse.body)}');
     }
   }
 
   Future<void> deleteResult(SharedTestResult result) async {
     final uri = Uri.parse(baseUrl);
-    final payload = <String, dynamic>{
-      'action': 'delete_result',
-      'id': result.id,
-      'result_id': result.id,
-      'student_name': result.studentName,
-      'subject': result.subject,
-      'percentage': result.percentage,
-      'test_title': result.testTitle,
-      'created_at': result.createdAt.toIso8601String(),
-    };
 
-    final postResponse = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(payload),
-    );
-
-    if (postResponse.statusCode >= 200 && postResponse.statusCode < 300) {
-      final decoded = _tryDecodeMap(postResponse.body);
-      final isSuccess = decoded == null ||
-          decoded['ok'] == true ||
-          decoded['deleted'] == true ||
-          decoded['status'] == 'ok';
-      if (isSuccess) {
-        return;
-      }
-    }
-
-    // Some Apps Script deployments only support doGet for delete_result.
+    // Use GET directly for delete (Apps Script /exec redirects POST)
     final getUri = uri.replace(
       queryParameters: {
         'action': 'delete_result',
@@ -79,15 +56,13 @@ class LeaderboardApiService {
         'subject': result.subject,
         'percentage': result.percentage.toString(),
         if (result.testTitle != null) 'test_title': result.testTitle!,
-        'created_at': result.createdAt.toIso8601String(),
+        'created_at': result.createdAt.toUtc().toIso8601String(),
+        '_ts': DateTime.now().millisecondsSinceEpoch.toString(),
       },
     );
     final getResponse = await _client.get(getUri);
     if (getResponse.statusCode < 200 || getResponse.statusCode >= 300) {
-      throw Exception(
-        'Delete failed: ${postResponse.statusCode}/${getResponse.statusCode} '
-        '${_preview(getResponse.body)}',
-      );
+      throw Exception('Delete failed: ${getResponse.statusCode} ${_preview(getResponse.body)}');
     }
 
     final decoded = _tryDecodeMap(getResponse.body);
@@ -255,11 +230,20 @@ class LeaderboardApiService {
     final normalizedName = studentName.trim().toLowerCase();
     final normalizedSubject = subject.trim().toLowerCase();
     final normalizedTitle = (testTitle ?? '').trim().toLowerCase();
+    // Normalize datetime to UTC without milliseconds
+    final createdUtcTruncated = DateTime.utc(
+      createdAt.year,
+      createdAt.month,
+      createdAt.day,
+      createdAt.hour,
+      createdAt.minute,
+      createdAt.second,
+    );
     return [
       normalizedName,
       normalizedSubject,
-      percentage.toStringAsFixed(4),
-      createdAt.toUtc().toIso8601String(),
+      percentage.toStringAsFixed(1),
+      createdUtcTruncated.toIso8601String(),
       normalizedTitle,
     ].join('|');
   }

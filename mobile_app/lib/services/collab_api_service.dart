@@ -9,11 +9,36 @@ import '../models/quick_note.dart';
 import '../models/worksheet_record.dart';
 
 class CollabApiService {
-  CollabApiService({required this.baseUrl, http.Client? client})
-      : _client = client ?? http.Client();
+  CollabApiService({required String baseUrl, http.Client? client})
+      : baseUrl = _resolveBaseUrl(baseUrl),
+  _client = client ?? http.Client();
 
   final String baseUrl;
   final http.Client _client;
+
+  static const String _cloudBackendFallback =
+      'https://school-assistant-backend.onrender.com';
+
+  static String _resolveBaseUrl(String configured) {
+    final trimmed = configured.trim();
+    final uri = Uri.tryParse(trimmed);
+    final host = (uri?.host ?? '').toLowerCase();
+    final compact = trimmed.toLowerCase();
+    final isLocalHost =
+        host == '127.0.0.1' ||
+        host == 'localhost' ||
+        host == '0.0.0.0' ||
+        host == '10.0.2.2' ||
+        compact.contains('127.0.0.1') ||
+        compact.contains('localhost') ||
+        compact.contains('0.0.0.0') ||
+        compact.contains('10.0.2.2');
+
+    if (isLocalHost) {
+      return _cloudBackendFallback;
+    }
+    return trimmed;
+  }
 
   Future<CollabUser> signInBasic({
     required String name,

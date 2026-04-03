@@ -70,10 +70,17 @@ class LocalStoreService {
       return [];
     }
 
-    final list = (jsonDecode(raw) as List<dynamic>)
-        .cast<Map<String, dynamic>>()
-        .map(WorksheetRecord.fromJson)
-        .toList();
+    final list = <WorksheetRecord>[];
+    for (final item in (jsonDecode(raw) as List<dynamic>)) {
+      if (item is! Map<String, dynamic>) {
+        continue;
+      }
+      try {
+        list.add(WorksheetRecord.fromJson(item));
+      } catch (_) {
+        // Skip malformed older entries instead of failing the whole save/load flow.
+      }
+    }
     list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return list;
   }
@@ -126,10 +133,17 @@ class LocalStoreService {
       return [];
     }
 
-    final list = (jsonDecode(raw) as List<dynamic>)
-        .cast<Map<String, dynamic>>()
-        .map(QuickNote.fromJson)
-        .toList();
+    final list = <QuickNote>[];
+    for (final item in (jsonDecode(raw) as List<dynamic>)) {
+      if (item is! Map<String, dynamic>) {
+        continue;
+      }
+      try {
+        list.add(QuickNote.fromJson(item));
+      } catch (_) {
+        // Skip malformed older entries instead of failing the whole save/load flow.
+      }
+    }
     list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return list;
   }

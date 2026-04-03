@@ -115,11 +115,11 @@ class _ResultsLeaderboardScreenState extends State<ResultsLeaderboardScreen> {
           });
         }
         await _syncFromCloud();
-      } catch (_) {
+      } catch (e) {
         if (mounted) {
           setState(() {
             _statusMessage =
-                'Saved locally, but cloud submit failed. Tap Refresh to retry.';
+                'Saved locally, but cloud submit failed. ${e.toString()}';
           });
         }
       }
