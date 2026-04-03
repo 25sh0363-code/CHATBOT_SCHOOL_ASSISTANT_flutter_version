@@ -43,6 +43,40 @@ class ChatApiService {
     return note;
   }
 
+  Future<String> generateMindMap({
+    required String topic,
+    required String details,
+    List<NoteGenerationAttachment> attachments = const [],
+  }) async {
+    final uri = Uri.parse('$baseUrl/mindmap/generate');
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'topic': topic,
+        'details': details,
+        'attachments': attachments
+            .map((a) => {
+                  'name': a.name,
+                  'base64_data': a.base64Data,
+                  'mime_type': a.mimeType,
+                })
+            .toList(),
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error ${response.statusCode}: ${response.body}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final mindMap = data['mind_map'];
+    if (mindMap is! String || mindMap.trim().isEmpty) {
+      throw Exception('Invalid mind map response from backend.');
+    }
+    return mindMap;
+  }
+
   Future<String> sendMessage(String question, {List<Map<String, String>>? history}) async {
     final uri = Uri.parse('$baseUrl/chat');
     final response = await _client.post(

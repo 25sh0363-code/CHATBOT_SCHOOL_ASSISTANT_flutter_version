@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../config/app_config.dart';
 import '../models/quick_note.dart';
+import '../services/chat_api_service.dart';
 import '../services/local_store_service.dart';
 
 class MindMapLandscapeScreen extends StatefulWidget {
@@ -21,13 +23,17 @@ class MindMapLandscapeScreen extends StatefulWidget {
 class _MindMapLandscapeScreenState extends State<MindMapLandscapeScreen> {
   final TextEditingController _topicController =
       TextEditingController(text: 'Physics');
+  final TextEditingController _detailsController = TextEditingController();
   final TextEditingController _contentController = TextEditingController(
     text:
         '# Classical Mechanics\n## Newton\'s Laws\n## Kinematics\n## Dynamics\n\n# Electromagnetism\n## Maxwell\'s Equations\n## Electric Fields\n\n# Thermodynamics\n## Laws of Thermodynamics\n## Heat Transfer\n\n# Relativity\n## Special Relativity\n## General Relativity\n\n# Quantum Mechanics\n## Wave-Particle Duality\n## Uncertainty Principle',
   );
+  final ChatApiService _chatApiService =
+      ChatApiService(baseUrl: AppConfig.backendBaseUrl);
 
   List<QuickNote> _notes = <QuickNote>[];
   String? _selectedNoteId;
+  bool _generatingMindMap = false;
 
   @override
   void initState() {
@@ -42,6 +48,7 @@ class _MindMapLandscapeScreenState extends State<MindMapLandscapeScreen> {
   @override
   void dispose() {
     _topicController.dispose();
+    _detailsController.dispose();
     _contentController.dispose();
     SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.portraitUp,
@@ -50,6 +57,75 @@ class _MindMapLandscapeScreenState extends State<MindMapLandscapeScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     super.dispose();
+  }
+
+  Future<void> _saveMindMapNote({
+    required String topic,
+    required String content,
+  }) async {
+    final now = DateTime.now();
+    final note = QuickNote(
+      id: now.microsecondsSinceEpoch.toString(),
+      topic: topic,
+      content: content,
+      createdAt: now,
+      updatedAt: now,
+      attachments: const <QuickNoteAttachment>[],
+    );
+
+    setState(() {
+      _notes.insert(0, note);
+      _selectedNoteId = note.id;
+    });
+    await widget.storeService.saveQuickNotes(_notes);
+  }
+
+  Future<void> _generateAndSaveMindMap() async {
+    final topic = _topicController.text.trim();
+    if (topic.isEmpty || _generatingMindMap) {
+      return;
+    }
+
+    setState(() {
+      _generatingMindMap = true;
+    });
+
+    try {
+      final mindMap = await _chatApiService.generateMindMap(
+        topic: topic,
+        details: _detailsController.text.trim(),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      await _saveMindMapNote(topic: topic, content: mindMap);
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _contentController.text = mindMap;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mind map generated in studio and saved.')),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not generate mind map: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _generatingMindMap = false;
+        });
+      }
+    }
   }
 
   Future<void> _loadNotes() async {
@@ -134,6 +210,33 @@ class _MindMapLandscapeScreenState extends State<MindMapLandscapeScreen> {
                         decoration:
                             const InputDecoration(labelText: 'Center topic'),
                         onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _detailsController,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Chapter details/instructions (optional)',
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _generatingMindMap
+                              ? null
+                              : _generateAndSaveMindMap,
+                          icon: _generatingMindMap
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.auto_awesome_outlined),
+                          label: const Text('Generate & Save Mind Map'),
+                        ),
                       ),
                       const SizedBox(height: 10),
                       TextField(
