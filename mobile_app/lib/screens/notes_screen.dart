@@ -1,8 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
@@ -12,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../config/app_config.dart';
 import '../models/quick_note.dart';
 import '../services/chat_api_service.dart';
+import '../services/file_selection_service.dart';
 import '../services/local_store_service.dart';
 
 class NotesScreen extends StatefulWidget {
@@ -29,6 +28,7 @@ class _NotesScreenState extends State<NotesScreen> {
   final TextEditingController _contentController = TextEditingController();
   final ChatApiService _chatApiService =
       ChatApiService(baseUrl: AppConfig.backendBaseUrl);
+  final FileSelectionService _fileSelectionService = FileSelectionService();
 
   List<QuickNote> _notes = <QuickNote>[];
   final List<_SelectedAttachment> _attachments = <_SelectedAttachment>[];
@@ -129,8 +129,7 @@ class _NotesScreenState extends State<NotesScreen> {
       return;
     }
 
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final selectedFiles = await _fileSelectionService.pickFiles(
       allowedExtensions: const [
         'pdf',
         'png',
@@ -142,26 +141,17 @@ class _NotesScreenState extends State<NotesScreen> {
         'txt',
       ],
       allowMultiple: true,
-      withData: true,
+      dialogLabel: 'Attachments',
     );
-    if (result == null || result.files.isEmpty) {
+    if (selectedFiles.isEmpty) {
       return;
     }
 
     final selected = <_SelectedAttachment>[];
     final failed = <String>[];
-    for (final file in result.files) {
-      Uint8List? bytes = file.bytes;
-      if ((bytes == null || bytes.isEmpty) &&
-          (file.path?.isNotEmpty ?? false)) {
-        try {
-          bytes = await File(file.path!).readAsBytes();
-        } catch (_) {
-          bytes = null;
-        }
-      }
-
-      if (bytes == null || bytes.isEmpty) {
+    for (final file in selectedFiles) {
+      final bytes = file.bytes;
+      if (bytes.isEmpty) {
         failed.add(file.name);
         continue;
       }

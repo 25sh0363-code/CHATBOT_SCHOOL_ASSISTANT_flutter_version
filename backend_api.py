@@ -498,42 +498,43 @@ def _response_style_instructions(question: str) -> str:
 
     if any(token in q for token in ("topic", "lesson", "chapter", "full explanation", "complete explanation", "teach me")):
         return (
-            "Question type: full lesson/topic explanation. "
+            "Style: full lesson/topic explanation. "
             "Give a complete teaching-style answer, not a short overview. "
-            "Use clear section titles (without markdown symbols), include core concepts, intuition, formulas, and worked examples. "
-            "Cover common mistakes and exam tips at the end. "
+            "Use clear section titles only if they help readability, and keep them natural. "
+            "Include core concepts, intuition, formulas, and a short example when relevant. "
+            "Cover common mistakes and exam tips near the end. "
             "Ensure the response is self-contained and context-accurate."
         )
 
     if q.startswith(short_q_prefixes):
         return (
-            "Question type: direct factual question. "
+            "Style: direct factual question. "
             "Answer in 3-6 lines. Start with the exact answer, then one short supporting line. "
             "Do not add full-topic explanation unless explicitly asked."
         )
 
     if any(token in q for token in ("mcq", "option", "choose the correct", "a)", "b)", "c)", "d)")):
         return (
-            "Question type: MCQ/objective. "
+            "Style: MCQ/objective. "
             "Return only: Correct option + 1-2 line reason."
         )
 
     if any(token in q for token in ("solve", "calculate", "numerical", "find", "evaluate")):
         return (
-            "Question type: numerical/problem solving. "
+            "Style: numerical/problem solving. "
             "Return this exact order: Given, Formula, Substitution, Final Answer. "
             "Ensure the final numeric expression/result is explicitly written as the last line."
         )
 
     if any(token in q for token in ("difference", "compare", "vs", "distinguish")):
         return (
-            "Question type: comparison. "
+            "Style: comparison. "
             "Prefer a compact comparison table or aligned bullet list with only key differences and one-line examples."
         )
 
-    if any(token in q for token in ("explain", "why", "how", "derive", "in detail", "detailed")):
+    if any(token in q for token in ("derive", "derivation", "prove", "show that", "calculate the derivation")):
         return (
-            "Question type: derivation/explanatory. "
+            "Style: derivation/explanatory. "
             "Use this exact structure and titles: "
             "Setup and symbols, Governing law, Derivation steps, Final expression. "
             "In Derivation steps, use only numbered lines 1. 2. 3. (no bullets). "
@@ -547,8 +548,17 @@ def _response_style_instructions(question: str) -> str:
             "Do not leave derivation incomplete; end with one clean final formula line and applicability condition."
         )
 
+    if any(token in q for token in ("explain", "why", "how", "in detail", "detailed", "laws of", "theory of", "concept of", "tell me about")):
+        return (
+            "Style: conceptual explanation. "
+            "Answer directly and stay relevant to the asked concept. "
+            "Begin with the main idea, then explain the meaning of the law or concept, the formula if any, and 2-3 important implications or examples. "
+            "Do not turn the answer into a classification or template. "
+            "Do not write 'Question type:' or similar labels in the answer."
+        )
+
     return (
-        "Question type: standard query. "
+        "Style: standard query. "
         "Answer in a polished, readable style with short sections and clear spacing. "
         "Start with the direct answer, then provide supporting explanation with at least one example when relevant."
     )
@@ -726,7 +736,7 @@ def _compact_system_prompt(*, context: str, strict_mode: bool, response_style: s
     ) if is_derivation else ""
     
     return (
-        "You are an ELITE NCERT-aligned Class 11-12 Chemistry and Physics tutor. Your goal: BEAT ChatGPT in accuracy, depth, and completeness.\n"
+        "You are an ELITE NCERT-aligned Class 11-12 Chemistry and Physics tutor. Your goal is to answer the exact question directly and accurately.\n"
         "ACCURACY FIRST:\n"
         "- Use retrieved NCERT context as authority. Cross-check every claim.\n"
         "- NEVER guess formulas or process steps—cite NCERT or verified physics.\n"
@@ -741,11 +751,12 @@ def _compact_system_prompt(*, context: str, strict_mode: bool, response_style: s
         "PRESENTATION:\n"
         "- Never change the target system asked (dipole stays dipole, ring stays ring, etc.).\n"
         "- Use plain readable equations: E = (1/(4πε₀)) * (2p/x³), not LaTeX symbols or {braces}.\n"
-        "- Use clear natural section titles: Setup and symbols, Governing law, Derivation steps, etc.\n"
+        "- Use clear natural section titles only when helpful. Do not force a derivation template unless the user asked for a derivation/proof.\n"
+        "- Never write labels like 'Question type:' in the answer.\n"
         "- Resolution: If pronouns (this/that/these) appear, resolve using chat history context.\n"
         "- NEVER end mid-step or incomplete—always provide clear final answer/conclusion.\n\n"
         f"{derivation_warning}"
-        f"Response style (REQUIRED): {response_style}\n"
+        f"Answer style guidance: {response_style}\n"
         f"Strict textbook mode: {'yes (only use provided context)' if strict_mode else 'no (add related context)'}\n\n"
         f"NCERT Context (PRIMARY SOURCE):\n{context_block}"
     )

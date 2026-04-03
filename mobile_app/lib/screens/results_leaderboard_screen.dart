@@ -77,12 +77,42 @@ class _ResultsLeaderboardScreenState extends State<ResultsLeaderboardScreen> {
     await widget.storeService.saveSharedTestResults(_results);
   }
 
+  Future<bool> _confirmResultSubmission() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Submit result?'),
+          content: const Text(
+            'Leaderboard results are transparent. If false results are posted, fellow peers are free to report and take them down.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('I Understand'),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed == true;
+  }
+
   Future<void> _addResult() async {
     final name = _nameController.text.trim();
     final percentage = double.tryParse(_percentageController.text.trim());
     final testTitle = _testTitleController.text.trim();
 
     if (name.isEmpty || percentage == null) {
+      return;
+    }
+
+    final confirmed = await _confirmResultSubmission();
+    if (!confirmed) {
       return;
     }
 

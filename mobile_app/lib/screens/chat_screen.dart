@@ -1,7 +1,5 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -9,6 +7,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import '../config/app_config.dart';
 import '../models/chat_message.dart';
 import '../services/chat_api_service.dart';
+import '../services/file_selection_service.dart';
 import '../services/local_store_service.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -72,6 +71,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late final ChatApiService _chatService;
+  late final FileSelectionService _fileSelectionService;
   late final LocalStoreService _storeService;
 
   bool _sending = false;
@@ -105,6 +105,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _chatService = ChatApiService(baseUrl: AppConfig.backendBaseUrl);
+    _fileSelectionService = FileSelectionService();
     _storeService = LocalStoreService();
     _loadChatState();
   }
@@ -198,6 +199,49 @@ class _ChatScreenState extends State<ChatScreen> {
       _activeSessionId = session.id;
       _selectedImages.clear();
       _controller.clear();
+    });
+    await _persistChatState();
+  }
+
+  Future<void> _renameCurrentSession() async {
+    final controller = TextEditingController(text: _activeSession.title);
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename chat window'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Chat window name',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              if (value.isEmpty) {
+                return;
+              }
+              Navigator.pop(context, value);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (newTitle == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _activeSession.title = newTitle;
     });
     await _persistChatState();
   }
@@ -365,44 +409,29 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
+    final picked = await _fileSelectionService.pickFiles(
+      allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
       allowMultiple: true,
+      dialogLabel: 'Images',
     );
 
-    if (result == null || result.files.isEmpty) {
-      return;
-    }
-
-    final picked = <_SelectedImageAttachment>[];
-    for (final file in result.files) {
-      final bytes = file.bytes;
-      if (bytes == null || bytes.isEmpty) {
-        continue;
-      }
-      picked.add(
-        _SelectedImageAttachment(
-          name: file.name,
-          base64: base64Encode(bytes),
-          mimeType: _mimeTypeFromFilename(file.name),
-          bytes: bytes,
-        ),
-      );
-    }
-
     if (picked.isEmpty) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not read selected image bytes.')),
-      );
       return;
     }
 
     setState(() {
-      _selectedImages.addAll(picked);
+      _selectedImages.addAll(
+        picked
+            .map(
+              (file) => _SelectedImageAttachment(
+                name: file.name,
+                base64: base64Encode(file.bytes),
+                mimeType: _mimeTypeFromFilename(file.name),
+                bytes: file.bytes,
+              ),
+            )
+            .toList(),
+      );
     });
   }
 
@@ -483,6 +512,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 tooltip: 'New chat window',
                 onPressed: _sending ? null : _createSession,
                 icon: const Icon(Icons.add_comment_outlined),
+              ),
+              IconButton(
+                tooltip: 'Rename chat window',
+                onPressed: _sending ? null : _renameCurrentSession,
+                icon: const Icon(Icons.drive_file_rename_outline),
               ),
               IconButton(
                 tooltip: 'Delete current chat window',
@@ -720,8 +754,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 color: isDark ? const Color(0xFF223140) : const Color(0xFFE8F2FB),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Row(
-                children: const [
+              child: const Row(
+                children: [
                   SizedBox(
                     width: 16,
                     height: 16,

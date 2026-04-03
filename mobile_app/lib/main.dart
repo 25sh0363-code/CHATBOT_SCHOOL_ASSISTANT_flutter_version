@@ -222,6 +222,7 @@ class _FocusTimerOverlayState extends State<_FocusTimerOverlay> {
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
                           width: boxSize.width,
+                          height: boxSize.height,
                           padding: _minimized
                               ? const EdgeInsets.symmetric(
                                   horizontal: 8,
@@ -231,8 +232,9 @@ class _FocusTimerOverlayState extends State<_FocusTimerOverlay> {
                           decoration: BoxDecoration(
                             color: theme.colorScheme.surface,
                             borderRadius: BorderRadius.circular(18),
-                            border:
-                                Border.all(color: theme.colorScheme.outlineVariant),
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant,
+                            ),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withValues(alpha: 0.12),
@@ -248,6 +250,8 @@ class _FocusTimerOverlayState extends State<_FocusTimerOverlay> {
                                   },
                                   borderRadius: BorderRadius.circular(14),
                                   child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.max,
                                     children: [
                                       Icon(
                                         Icons.timer_outlined,
@@ -255,14 +259,14 @@ class _FocusTimerOverlayState extends State<_FocusTimerOverlay> {
                                         size: 16,
                                       ),
                                       const SizedBox(width: 6),
-                                      Expanded(
+                                      Flexible(
                                         child: Text(
                                           '$minutes:$seconds',
                                           style: theme.textTheme.labelSmall?.copyWith(
                                             color: theme.colorScheme.primary,
                                             fontWeight: FontWeight.w700,
                                           ),
-                                          overflow: TextOverflow.fade,
+                                          overflow: TextOverflow.ellipsis,
                                           softWrap: false,
                                         ),
                                       ),
@@ -270,7 +274,7 @@ class _FocusTimerOverlayState extends State<_FocusTimerOverlay> {
                                   ),
                                 )
                               : Column(
-                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisSize: MainAxisSize.max,
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
@@ -316,7 +320,7 @@ class _FocusTimerOverlayState extends State<_FocusTimerOverlay> {
                                         color: theme.colorScheme.onSurfaceVariant,
                                       ),
                                     ),
-                                    const SizedBox(height: 12),
+                                    const Spacer(),
                                     SizedBox(
                                       width: double.infinity,
                                       child: OutlinedButton.icon(
