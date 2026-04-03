@@ -6,6 +6,7 @@ import '../models/chat_message.dart';
 import '../models/collab_user.dart';
 import '../models/exam_event.dart';
 import '../models/homework_task.dart';
+import '../models/mind_map_record.dart';
 import '../models/quick_note.dart';
 import '../models/shared_test_result.dart';
 import '../models/test_record.dart';
@@ -32,6 +33,7 @@ class LocalStoreService {
 
   static const String _testsKey = 'tests_v1';
   static const String _worksheetsKey = 'worksheets_v1';
+  static const String _mindMapsKey = 'mind_maps_v1';
   static const String _darkModeKey = 'dark_mode_v1';
   static const String _chatHistoryKey = 'chat_history_v1';
   static const String _quickNotesKey = 'quick_notes_v1';
@@ -89,6 +91,34 @@ class LocalStoreService {
     final prefs = await SharedPreferences.getInstance();
     final payload = jsonEncode(worksheets.map((e) => e.toJson()).toList());
     await prefs.setString(_worksheetsKey, payload);
+  }
+
+  Future<List<MindMapRecord>> loadMindMaps() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_mindMapsKey);
+    if (raw == null || raw.isEmpty) {
+      return [];
+    }
+
+    final list = <MindMapRecord>[];
+    for (final item in (jsonDecode(raw) as List<dynamic>)) {
+      if (item is! Map<String, dynamic>) {
+        continue;
+      }
+      try {
+        list.add(MindMapRecord.fromJson(item));
+      } catch (_) {
+        // Skip malformed older entries instead of failing the whole save/load flow.
+      }
+    }
+    list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return list;
+  }
+
+  Future<void> saveMindMaps(List<MindMapRecord> mindMaps) async {
+    final prefs = await SharedPreferences.getInstance();
+    final payload = jsonEncode(mindMaps.map((e) => e.toJson()).toList());
+    await prefs.setString(_mindMapsKey, payload);
   }
 
   Future<bool> loadDarkModeEnabled() async {

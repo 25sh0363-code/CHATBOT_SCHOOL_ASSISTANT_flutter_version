@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../models/collab_message.dart';
 import '../models/collab_room.dart';
 import '../models/collab_user.dart';
+import '../models/mind_map_record.dart';
 import '../models/quick_note.dart';
 import '../models/worksheet_record.dart';
 
@@ -249,6 +250,29 @@ class CollabApiService {
     );
     if (response.statusCode != 200) {
       throw Exception('Failed to share worksheet: ${response.body}');
+    }
+  }
+
+  Future<void> shareMindMap({
+    required String roomId,
+    required String userEmail,
+    required String userName,
+    required MindMapRecord mindMap,
+  }) async {
+    final uri = Uri.parse('$baseUrl/collab/rooms/$roomId/share-mindmap');
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'user_email': userEmail,
+        'user_name': userName,
+        'title': mindMap.title,
+        'topic': mindMap.topic,
+        'content': mindMap.content,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to share mind map: ${response.body}');
     }
   }
 

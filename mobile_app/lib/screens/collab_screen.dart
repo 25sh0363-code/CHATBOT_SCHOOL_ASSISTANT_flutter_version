@@ -11,6 +11,7 @@ import '../config/app_config.dart';
 import '../models/collab_message.dart';
 import '../models/collab_room.dart';
 import '../models/collab_user.dart';
+import '../models/mind_map_record.dart';
 import '../models/quick_note.dart';
 import '../models/worksheet_record.dart';
 import '../services/collab_api_service.dart';
@@ -682,6 +683,41 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
     }
   }
 
+  Future<void> _shareMindMap() async {
+    final mindMaps = await widget.storeService.loadMindMaps();
+    if (!mounted) {
+      return;
+    }
+    if (mindMaps.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No mind maps available to share.')),
+      );
+      return;
+    }
+
+    final mindMap = await _pickMindMap(mindMaps);
+    if (mindMap == null) {
+      return;
+    }
+
+    try {
+      await widget.collabApi.shareMindMap(
+        roomId: widget.room.id,
+        userEmail: widget.user.email,
+        userName: widget.user.name,
+        mindMap: mindMap,
+      );
+      await _loadMessages(silent: true);
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not share mind map: $e')),
+      );
+    }
+  }
+
   List<QuickNoteAttachment> _noteAttachmentsFromPayload(CollabMessage message) {
     return (message.payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
@@ -1088,6 +1124,49 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
     );
   }
 
+  Future<void> _saveSharedMindMap(CollabMessage message) async {
+    final title = message.payload['title']?.toString().trim() ?? '';
+    final topic = message.payload['topic']?.toString().trim() ?? '';
+    final content = message.payload['content']?.toString().trim() ?? '';
+
+    if (title.isEmpty || topic.isEmpty || content.isEmpty) {
+      return;
+    }
+
+    final mindMaps = await widget.storeService.loadMindMaps();
+    final existingIndex = mindMaps.indexWhere(
+      (mindMap) =>
+          mindMap.title == title &&
+          mindMap.topic == topic &&
+          mindMap.content == content,
+    );
+    final now = DateTime.now();
+
+    if (existingIndex >= 0) {
+      mindMaps.removeAt(existingIndex);
+    }
+
+    mindMaps.insert(
+      0,
+      MindMapRecord(
+        id: 'shared_mindmap_${now.microsecondsSinceEpoch}',
+        title: title,
+        topic: topic,
+        content: content,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    await widget.storeService.saveMindMaps(mindMaps);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Saved mind map: $title')),
+    );
+  }
+
   String _notePreview(String content) {
     final normalized = content.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (normalized.length <= 160) {
@@ -1102,6 +1181,14 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
         onPressed: () => _saveSharedNote(message),
         icon: const Icon(Icons.download_outlined),
         label: const Text('Save Note'),
+      );
+    }
+
+    if (message.messageType == 'mindmap') {
+      return TextButton.icon(
+        onPressed: () => _saveSharedMindMap(message),
+        icon: const Icon(Icons.download_outlined),
+        label: const Text('Save Mind Map'),
       );
     }
 
@@ -1208,6 +1295,36 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
     );
   }
 
+  Future<MindMapRecord?> _pickMindMap(List<MindMapRecord> mindMaps) async {
+    return showDialog<MindMapRecord>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Share Mind Map'),
+          content: SizedBox(
+            width: 420,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: mindMaps.length,
+              itemBuilder: (_, index) {
+                final mindMap = mindMaps[index];
+                return ListTile(
+                  title: Text(mindMap.title),
+                  subtitle: Text(
+                    mindMap.content,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => Navigator.of(context).pop(mindMap),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) {
@@ -1276,6 +1393,12 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
                         onPressed: _busy ? null : _shareNote,
                         icon: const Icon(Icons.sticky_note_2_outlined, size: 18),
                         label: const Text('Share Note'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : _shareMindMap,
+                        icon: const Icon(Icons.device_hub_outlined, size: 18),
+                        label: const Text('Share Mind Map'),
                       ),
                       const SizedBox(width: 8),
                       OutlinedButton.icon(
@@ -1516,6 +1639,35 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
                   )
                   .toList(),
             ),
+          ],
+        ],
+      );
+    }
+
+    if (message.messageType == 'mindmap') {
+      final title = message.payload['title']?.toString() ?? 'Mind Map';
+      final topic = message.payload['topic']?.toString() ?? '';
+      final content = message.payload['content']?.toString() ?? '';
+      final preview = content.replaceAll(RegExp(r'\s+'), ' ').trim();
+      final previewText =
+          preview.length > 120 ? '${preview.substring(0, 120)}...' : preview;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          if (topic.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(topic),
+          ],
+          if (previewText.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(previewText, style: const TextStyle(height: 1.35)),
           ],
         ],
       );

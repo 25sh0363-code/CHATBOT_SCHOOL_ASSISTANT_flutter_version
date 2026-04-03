@@ -151,6 +151,14 @@ class CollabShareWorksheetRequest(BaseModel):
     questions: list[str] = Field(default_factory=list)
 
 
+class CollabShareMindMapRequest(BaseModel):
+    user_email: str = Field(min_length=3, max_length=180)
+    user_name: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=240)
+    topic: str = Field(min_length=1, max_length=120)
+    content: str = Field(min_length=1, max_length=12000)
+
+
 class CollabMeetRequest(BaseModel):
     user_email: str = Field(min_length=3, max_length=180)
     user_name: str = Field(min_length=1, max_length=120)
@@ -1249,15 +1257,17 @@ def generate_mind_map(
     llm = _chat_llm(NOTES_MODEL, NOTES_MAX_TOKENS, 0.2)
     prompt = (
         "You are a mind map generator for students. Produce a clean markdown outline that can be rendered as a mind map.\n"
-        "Use the chapter/topic as the center idea and expand it into a clear study tree.\n"
+        "Use the chapter/topic as the center idea and expand it into a clear study tree with short explanatory content.\n"
         "Format rules:\n"
         "- Output markdown headings only, with no intro, no explanation, and no closing summary.\n"
         "- Use # for the central topic branches and ## for sub-branches.\n"
-        "- You may use ### for very small supporting details, but keep the structure shallow and easy to scan.\n"
+        "- Under each sub-branch, add 1-3 short detail lines explaining what it means, how it works, or why it matters.\n"
+        "- Keep the structure shallow and easy to scan.\n"
         "- Keep it concise yet complete: 4-8 major branches, each with 2-4 sub-branches.\n"
         "- Use short, descriptive labels that fit a mind map node.\n"
         "- Ground the structure in the user details and any extracted attachment context.\n"
-        "- Do not use bullet lists, numbered lists, or paragraph prose.\n"
+        "- Explain classifications clearly. Example: if the topic is amines, primary amines should say what they are, not just list the term.\n"
+        "- Do not use bullet lists, numbered lists, or paragraph prose outside the explanation lines under headings.\n"
         "- Do not repeat the topic as a heading inside the outline; the topic is the center node.\n\n"
         f"Topic: {topic.strip()}\n\n"
         f"Context:\n{context_text}"
@@ -1677,6 +1687,34 @@ def collab_share_worksheet(room_id: str, payload: CollabShareWorksheetRequest) -
                 "subject": payload.subject.strip(),
                 "topic": payload.topic.strip(),
                 "questions": questions,
+            },
+        )
+
+    return {"message": message}
+
+
+@app.post("/collab/rooms/{room_id}/share-mindmap")
+def collab_share_mind_map(room_id: str, payload: CollabShareMindMapRequest) -> dict[str, Any]:
+    user_email = _sanitize_email(payload.user_email)
+    user_name = payload.user_name.strip()
+
+    with COLLAB_LOCK:
+        _cleanup_collab_state_if_due()
+        room = COLLAB_ROOMS.get(room_id)
+        if room is None:
+            raise HTTPException(status_code=404, detail="Collab room not found.")
+        _assert_member(room, user_email)
+
+        message = _add_room_message(
+            room,
+            user_email,
+            user_name,
+            "mindmap",
+            f"Shared mind map: {payload.title.strip()}",
+            {
+                "title": payload.title.strip(),
+                "topic": payload.topic.strip(),
+                "content": payload.content.strip(),
             },
         )
 

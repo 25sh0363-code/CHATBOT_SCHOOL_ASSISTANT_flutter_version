@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config/app_config.dart';
-import '../models/quick_note.dart';
+import '../models/mind_map_record.dart';
 import '../services/chat_api_service.dart';
 import '../services/local_store_service.dart';
 
@@ -31,8 +31,8 @@ class _MindMapLandscapeScreenState extends State<MindMapLandscapeScreen> {
   final ChatApiService _chatApiService =
       ChatApiService(baseUrl: AppConfig.backendBaseUrl);
 
-  List<QuickNote> _notes = <QuickNote>[];
-  String? _selectedNoteId;
+  List<MindMapRecord> _mindMaps = <MindMapRecord>[];
+  String? _selectedMindMapId;
   bool _generatingMindMap = false;
 
   @override
@@ -64,20 +64,20 @@ class _MindMapLandscapeScreenState extends State<MindMapLandscapeScreen> {
     required String content,
   }) async {
     final now = DateTime.now();
-    final note = QuickNote(
+    final mindMap = MindMapRecord(
       id: now.microsecondsSinceEpoch.toString(),
+      title: topic,
       topic: topic,
       content: content,
       createdAt: now,
       updatedAt: now,
-      attachments: const <QuickNoteAttachment>[],
     );
 
     setState(() {
-      _notes.insert(0, note);
-      _selectedNoteId = note.id;
+      _mindMaps.insert(0, mindMap);
+      _selectedMindMapId = mindMap.id;
     });
-    await widget.storeService.saveQuickNotes(_notes);
+    await widget.storeService.saveMindMaps(_mindMaps);
   }
 
   Future<void> _generateAndSaveMindMap() async {
@@ -129,28 +129,84 @@ class _MindMapLandscapeScreenState extends State<MindMapLandscapeScreen> {
   }
 
   Future<void> _loadNotes() async {
-    final notes = await widget.storeService.loadQuickNotes();
+    final notes = await widget.storeService.loadMindMaps();
     if (!mounted) {
       return;
     }
     setState(() {
-      _notes = notes;
+      _mindMaps = notes;
     });
   }
 
-  void _onSelectedNote(String? noteId) {
-    if (noteId == null) {
+  void _onSelectedMindMap(String? mindMapId) {
+    if (mindMapId == null) {
       return;
     }
-    final note = _notes.where((item) => item.id == noteId).firstOrNull;
-    if (note == null) {
+    final mindMap = _mindMaps.where((item) => item.id == mindMapId).firstOrNull;
+    if (mindMap == null) {
       return;
     }
     setState(() {
-      _selectedNoteId = noteId;
-      _topicController.text = note.topic;
-      _contentController.text = note.content;
+      _selectedMindMapId = mindMapId;
+      _topicController.text = mindMap.topic;
+      _contentController.text = mindMap.content;
     });
+  }
+
+  Future<void> _saveCurrentMindMap() async {
+    final topic = _topicController.text.trim();
+    final content = _contentController.text.trim();
+    if (topic.isEmpty || content.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add a topic and mind map content first.')),
+      );
+      return;
+    }
+
+    final now = DateTime.now();
+    final existingIndex = _selectedMindMapId == null
+        ? -1
+        : _mindMaps.indexWhere((item) => item.id == _selectedMindMapId);
+    final mindMap = MindMapRecord(
+      id: existingIndex >= 0
+          ? _mindMaps[existingIndex].id
+          : now.microsecondsSinceEpoch.toString(),
+      title: topic,
+      topic: topic,
+      content: content,
+      createdAt: existingIndex >= 0 ? _mindMaps[existingIndex].createdAt : now,
+      updatedAt: now,
+    );
+
+    setState(() {
+      if (existingIndex >= 0) {
+        _mindMaps[existingIndex] = mindMap;
+      } else {
+        _mindMaps.insert(0, mindMap);
+      }
+      _selectedMindMapId = mindMap.id;
+    });
+    await widget.storeService.saveMindMaps(_mindMaps);
+  }
+
+  Future<void> _deleteMindMap(String id) async {
+    setState(() {
+      _mindMaps.removeWhere((item) => item.id == id);
+      if (_selectedMindMapId == id) {
+        _selectedMindMapId = null;
+      }
+    });
+    await widget.storeService.saveMindMaps(_mindMaps);
+  }
+
+  String _formatDateTime(DateTime value) {
+    final date = value.toIso8601String().split('T').first;
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$date $hour:$minute';
   }
 
   @override
@@ -191,20 +247,6 @@ class _MindMapLandscapeScreenState extends State<MindMapLandscapeScreen> {
                             ),
                       ),
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: _selectedNoteId,
-                        hint: const Text('Load from saved note'),
-                        items: _notes
-                            .map(
-                              (note) => DropdownMenuItem<String>(
-                                value: note.id,
-                                child: Text(note.topic),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: _onSelectedNote,
-                      ),
-                      const SizedBox(height: 10),
                       TextField(
                         controller: _topicController,
                         decoration:
@@ -238,6 +280,133 @@ class _MindMapLandscapeScreenState extends State<MindMapLandscapeScreen> {
                           label: const Text('Generate & Save Mind Map'),
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _saveCurrentMindMap,
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Save Current Mind Map'),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Saved Mind Maps',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_mindMaps.isEmpty)
+                        Text(
+                          'No saved mind maps yet.',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        )
+                      else
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _mindMaps.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            childAspectRatio: 0.92,
+                          ),
+                          itemBuilder: (context, index) {
+                            final mindMap = _mindMaps[index];
+                            final isSelected = mindMap.id == _selectedMindMapId;
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: () => _onSelectedMindMap(mindMap.id),
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? Theme.of(context)
+                                          .colorScheme
+                                          .primaryContainer
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainerHighest
+                                          .withValues(alpha: 0.55),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .outline
+                                            .withValues(alpha: 0.2),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            mindMap.title,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          visualDensity:
+                                              VisualDensity.compact,
+                                          tooltip: 'Delete mind map',
+                                          onPressed: () =>
+                                              _deleteMindMap(mindMap.id),
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            size: 18,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      mindMap.content,
+                                      maxLines: 5,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(height: 1.35),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      _formatDateTime(mindMap.updatedAt),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       const SizedBox(height: 10),
                       TextField(
                         controller: _contentController,
