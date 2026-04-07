@@ -1,0 +1,77 @@
+name: Build Desktop Zips
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'mobile_app/**'
+      - '.github/workflows/windows-desktop-build.yml'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: mobile_app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Flutter Pub Get
+        run: flutter pub get
+
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      - name: Zip Windows Release
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath build/windows/sinovate-windows-release.zip -Force
+
+      - name: Upload Windows Zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sinovate-windows-release-zip
+          path: mobile_app/build/windows/sinovate-windows-release.zip
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile_app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Flutter Pub Get
+        run: flutter pub get
+
+      - name: Build macOS Release
+        run: flutter build macos --release
+
+      - name: Zip macOS App Bundle
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Release/sinovate.app build/macos/sinovate-macos-release.zip
+
+      - name: Upload macOS Zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sinovate-macos-release-zip
+          path: mobile_app/build/macos/sinovate-macos-release.zip
+          if-no-files-found: error
