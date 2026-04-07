@@ -136,6 +136,8 @@ class _NotesScreenState extends State<NotesScreen> {
         'jpg',
         'jpeg',
         'webp',
+        'heic',
+        'heif',
         'doc',
         'docx',
         'txt',
@@ -198,11 +200,20 @@ class _NotesScreenState extends State<NotesScreen> {
     if (lower.endsWith('.pdf')) {
       return 'application/pdf';
     }
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    }
     if (lower.endsWith('.png')) {
       return 'image/png';
     }
     if (lower.endsWith('.webp')) {
       return 'image/webp';
+    }
+    if (lower.endsWith('.heic')) {
+      return 'image/heic';
+    }
+    if (lower.endsWith('.heif')) {
+      return 'image/heif';
     }
     if (lower.endsWith('.doc')) {
       return 'application/msword';

@@ -6,6 +6,7 @@ import '../models/chat_message.dart';
 import '../models/collab_user.dart';
 import '../models/exam_event.dart';
 import '../models/homework_task.dart';
+import '../models/learning_journey_record.dart';
 import '../models/mind_map_record.dart';
 import '../models/quick_note.dart';
 import '../models/shared_test_result.dart';
@@ -42,8 +43,13 @@ class LocalStoreService {
   static const String _examEventsKey = 'exam_events_v1';
   static const String _collabUserKey = 'collab_user_v1';
   static const String _focusTimerEndsAtKey = 'focus_timer_ends_at_v1';
+  static const String _learningJourneysKey = 'learning_journeys_v1';
   static const String _learningJourneyKey = 'learning_journey_v1';
   static const String _sharedTestResultsKey = 'shared_test_results_v1';
+  static const String _profileNameKey = 'profile_name_v1';
+  static const String _profilePhotoBase64Key = 'profile_photo_base64_v1';
+  static const String _dailyQuoteEnabledKey = 'daily_quote_enabled_v1';
+  static const String _hapticsEnabledKey = 'haptics_enabled_v1';
 
   Future<List<TestRecord>> loadTests() async {
     final prefs = await SharedPreferences.getInstance();
@@ -301,27 +307,128 @@ class LocalStoreService {
     await prefs.setString(_focusTimerEndsAtKey, value.toIso8601String());
   }
 
-  Future<Map<String, dynamic>?> loadLearningJourneyState() async {
+  Future<List<LearningJourneyRecord>> loadLearningJourneys() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_learningJourneyKey);
+    final raw = prefs.getString(_learningJourneysKey);
     if (raw == null || raw.isEmpty) {
-      return null;
+      final legacyRaw = prefs.getString(_learningJourneyKey);
+      if (legacyRaw == null || legacyRaw.isEmpty) {
+        return [];
+      }
+
+      final decodedLegacy = jsonDecode(legacyRaw);
+      if (decodedLegacy is! Map<String, dynamic>) {
+        return [];
+      }
+
+      final now = DateTime.now();
+      final record = LearningJourneyRecord(
+        id: 'legacy_learning_journey',
+        title: (decodedLegacy['examName'] ?? 'Learning Journey')
+                .toString()
+                .trim()
+                .isEmpty
+            ? 'Learning Journey'
+            : decodedLegacy['examName'].toString(),
+        examName: decodedLegacy['examName']?.toString() ?? '',
+        subject: decodedLegacy['subject']?.toString() ?? 'physics',
+        state: decodedLegacy,
+        createdAt: now,
+        updatedAt: now,
+      );
+      await saveLearningJourneyRecord(record);
+      return [record];
     }
 
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map<String, dynamic>) {
+    final list = <LearningJourneyRecord>[];
+    for (final item in (jsonDecode(raw) as List<dynamic>)) {
+      if (item is! Map<String, dynamic>) {
+        continue;
+      }
+      try {
+        list.add(LearningJourneyRecord.fromJson(item));
+      } catch (_) {
+        // Skip malformed entries.
+      }
+    }
+    list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return list;
+  }
+
+  Future<LearningJourneyRecord?> loadLearningJourneyRecord(String id) async {
+    final journeys = await loadLearningJourneys();
+    for (final record in journeys) {
+      if (record.id == id) {
+        return record;
+      }
+    }
+    return null;
+  }
+
+  Future<LearningJourneyRecord?> loadLatestLearningJourney() async {
+    final journeys = await loadLearningJourneys();
+    if (journeys.isEmpty) {
       return null;
     }
-    return decoded;
+    return journeys.first;
+  }
+
+  Future<void> saveLearningJourneys(
+      List<LearningJourneyRecord> journeys) async {
+    final prefs = await SharedPreferences.getInstance();
+    final payload = jsonEncode(journeys.map((e) => e.toJson()).toList());
+    await prefs.setString(_learningJourneysKey, payload);
+  }
+
+  Future<void> saveLearningJourneyRecord(LearningJourneyRecord record) async {
+    final journeys = await loadLearningJourneys();
+    final index = journeys.indexWhere((item) => item.id == record.id);
+    if (index >= 0) {
+      journeys[index] = record;
+    } else {
+      journeys.insert(0, record);
+    }
+    journeys.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    await saveLearningJourneys(journeys);
+  }
+
+  Future<void> deleteLearningJourney(String id) async {
+    final journeys = await loadLearningJourneys();
+    journeys.removeWhere((item) => item.id == id);
+    await saveLearningJourneys(journeys);
+  }
+
+  Future<Map<String, dynamic>?> loadLearningJourneyState() async {
+    final latest = await loadLatestLearningJourney();
+    return latest?.state;
   }
 
   Future<void> saveLearningJourneyState(Map<String, dynamic>? state) async {
-    final prefs = await SharedPreferences.getInstance();
     if (state == null) {
+      final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_learningJourneyKey);
       return;
     }
-    await prefs.setString(_learningJourneyKey, jsonEncode(state));
+
+    final now = DateTime.now();
+    final latest = await loadLatestLearningJourney();
+    final id = (state['id']?.toString().trim().isNotEmpty ?? false)
+        ? state['id'].toString()
+        : (latest?.id ?? 'learning_journey_${now.microsecondsSinceEpoch}');
+    final record = LearningJourneyRecord(
+      id: id,
+      title: (state['title']?.toString().trim().isNotEmpty ?? false)
+          ? state['title'].toString()
+          : (state['examName']?.toString().trim().isNotEmpty ?? false)
+              ? state['examName'].toString()
+              : 'Learning Journey',
+      examName: state['examName']?.toString() ?? '',
+      subject: state['subject']?.toString() ?? 'physics',
+      state: state,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await saveLearningJourneyRecord(record);
   }
 
   Future<List<SharedTestResult>> loadSharedTestResults() async {
@@ -343,5 +450,51 @@ class LocalStoreService {
     final prefs = await SharedPreferences.getInstance();
     final payload = jsonEncode(items.map((e) => e.toJson()).toList());
     await prefs.setString(_sharedTestResultsKey, payload);
+  }
+
+  Future<String> loadProfileName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_profileNameKey)?.trim() ?? '';
+    return value.isEmpty ? 'Student' : value;
+  }
+
+  Future<void> saveProfileName(String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_profileNameKey, name.trim());
+  }
+
+  Future<String?> loadProfilePhotoBase64() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_profilePhotoBase64Key)?.trim() ?? '';
+    return value.isEmpty ? null : value;
+  }
+
+  Future<void> saveProfilePhotoBase64(String? value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value == null || value.trim().isEmpty) {
+      await prefs.remove(_profilePhotoBase64Key);
+      return;
+    }
+    await prefs.setString(_profilePhotoBase64Key, value.trim());
+  }
+
+  Future<bool> loadDailyQuoteEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_dailyQuoteEnabledKey) ?? true;
+  }
+
+  Future<void> saveDailyQuoteEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_dailyQuoteEnabledKey, enabled);
+  }
+
+  Future<bool> loadHapticsEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_hapticsEnabledKey) ?? true;
+  }
+
+  Future<void> saveHapticsEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_hapticsEnabledKey, enabled);
   }
 }

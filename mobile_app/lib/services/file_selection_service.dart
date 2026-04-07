@@ -21,13 +21,39 @@ class FileSelectionService {
     String dialogLabel = 'Files',
   }) async {
     if (Platform.isMacOS) {
-      return _pickFilesOnMac(
-        allowedExtensions: allowedExtensions,
-        allowMultiple: allowMultiple,
-        dialogLabel: dialogLabel,
-      );
+      try {
+        final picked = await _pickFilesOnMacWithFileSelector(
+          allowedExtensions: allowedExtensions,
+          allowMultiple: allowMultiple,
+          dialogLabel: dialogLabel,
+        );
+        if (picked.isNotEmpty) {
+          return picked;
+        }
+        // Some plugin combinations can return empty on macOS without throwing.
+        return _pickWithFilePicker(
+          allowedExtensions: allowedExtensions,
+          allowMultiple: allowMultiple,
+        );
+      } catch (_) {
+        // Fallback for edge macOS plugin issues.
+        return _pickWithFilePicker(
+          allowedExtensions: allowedExtensions,
+          allowMultiple: allowMultiple,
+        );
+      }
     }
 
+    return _pickWithFilePicker(
+      allowedExtensions: allowedExtensions,
+      allowMultiple: allowMultiple,
+    );
+  }
+
+  Future<List<PickedAttachment>> _pickWithFilePicker({
+    required List<String> allowedExtensions,
+    required bool allowMultiple,
+  }) async {
     final result = await FilePicker.platform.pickFiles(
       type: allowedExtensions.isEmpty ? FileType.any : FileType.custom,
       allowedExtensions: allowedExtensions.isEmpty ? null : allowedExtensions,
@@ -41,7 +67,14 @@ class FileSelectionService {
 
     final attachments = <PickedAttachment>[];
     for (final file in result.files) {
-      final bytes = file.bytes;
+      Uint8List? bytes = file.bytes;
+      if ((bytes == null || bytes.isEmpty) && (file.path?.isNotEmpty ?? false)) {
+        try {
+          bytes = await File(file.path!).readAsBytes();
+        } catch (_) {
+          bytes = null;
+        }
+      }
       if (bytes == null || bytes.isEmpty) {
         continue;
       }
@@ -50,7 +83,7 @@ class FileSelectionService {
     return attachments;
   }
 
-  Future<List<PickedAttachment>> _pickFilesOnMac({
+  Future<List<PickedAttachment>> _pickFilesOnMacWithFileSelector({
     required List<String> allowedExtensions,
     required bool allowMultiple,
     required String dialogLabel,
@@ -78,16 +111,21 @@ class FileSelectionService {
     return _convertXFiles([file]);
   }
 
-  Future<List<PickedAttachment>> _convertXFiles(List<dynamic> files) async {
+  Future<List<PickedAttachment>> _convertXFiles(List<XFile> files) async {
     final attachments = <PickedAttachment>[];
     for (final file in files) {
-      final Uint8List bytes = await file.readAsBytes();
+      Uint8List bytes;
+      try {
+        bytes = await file.readAsBytes();
+      } catch (_) {
+        continue;
+      }
       if (bytes.isEmpty) {
         continue;
       }
       attachments.add(
         PickedAttachment(
-          name: file.name as String,
+          name: file.name,
           bytes: bytes,
         ),
       );

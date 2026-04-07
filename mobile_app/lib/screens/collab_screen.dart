@@ -546,6 +546,10 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
     return isDark ? const Color(0xFFE5EEF8) : const Color(0xFF1E2B38);
   }
 
+  bool _sameSender(CollabMessage a, CollabMessage b) {
+    return a.senderEmail.trim().toLowerCase() == b.senderEmail.trim().toLowerCase();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1449,111 +1453,107 @@ class _CollabRoomPageState extends State<_CollabRoomPage> {
                     itemCount: _messages.length,
                     itemBuilder: (_, index) {
                       final message = _messages[index];
-                      final action = _messageAction(message);
                       final own = _isOwnMessage(message);
                       final bubbleColor = _bubbleColor(own, isDark, context);
                       final textColor = _textColor(own, isDark);
                       final metaColor = _metaColor(own, isDark);
-                      final timeLabel = _timeLabel(message.createdAt);
+                      final action = _messageAction(message);
+                      final previous = index > 0 ? _messages[index - 1] : null;
+                      final next =
+                          index < _messages.length - 1 ? _messages[index + 1] : null;
+                      final firstInRun = previous == null || !_sameSender(previous, message);
+                      final lastInRun = next == null || !_sameSender(next, message);
+
+                      final borderRadius = BorderRadius.only(
+                        topLeft: Radius.circular(!own && !firstInRun ? 10 : 18),
+                        topRight: Radius.circular(own && !firstInRun ? 10 : 18),
+                        bottomLeft: Radius.circular(!own && lastInRun ? 6 : 18),
+                        bottomRight: Radius.circular(own && lastInRun ? 6 : 18),
+                      );
 
                       return Align(
                         alignment:
                             own ? Alignment.centerRight : Alignment.centerLeft,
                         child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 640),
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                            decoration: BoxDecoration(
-                              color: bubbleColor,
-                              borderRadius: BorderRadius.only(
-                                topLeft: const Radius.circular(18),
-                                topRight: const Radius.circular(18),
-                                bottomLeft: Radius.circular(own ? 18 : 6),
-                                bottomRight: Radius.circular(own ? 6 : 18),
-                              ),
-                              border: Border.all(
-                                color: (own
-                                        ? const Color(0xFF6BB9FF)
-                                        : const Color(0xFF6E88A2))
-                                    .withValues(alpha: isDark ? 0.24 : 0.18),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black
-                                      .withValues(alpha: isDark ? 0.18 : 0.05),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 5),
-                                ),
-                              ],
+                          constraints: const BoxConstraints(maxWidth: 420),
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              bottom: lastInRun ? 10 : 3,
+                              top: firstInRun ? 2 : 0,
                             ),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment: own
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        message.senderName,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelLarge
-                                            ?.copyWith(
-                                              color: metaColor,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                      ),
+                                if (firstInRun)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 4,
+                                      right: 4,
+                                      bottom: 4,
                                     ),
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: metaColor.withValues(alpha: 0.13),
-                                        borderRadius: BorderRadius.circular(999),
-                                      ),
-                                      child: Text(
-                                        message.messageType,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall
-                                            ?.copyWith(
-                                              color: metaColor,
-                                              fontWeight: FontWeight.w700,
-                                              letterSpacing: 0.2,
-                                            ),
-                                      ),
+                                    child: Text(
+                                      message.senderName,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelMedium
+                                          ?.copyWith(
+                                            color: metaColor,
+                                            fontWeight: FontWeight.w700,
+                                          ),
                                     ),
-                                    if (timeLabel.isNotEmpty) ...[
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        timeLabel,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall
-                                            ?.copyWith(
-                                              color:
-                                                  metaColor.withValues(alpha: 0.9),
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                DefaultTextStyle.merge(
-                                  style: TextStyle(color: textColor, height: 1.35),
-                                  child: _buildMessageBody(message),
-                                ),
-                                if (action != null) ...[
-                                  const SizedBox(height: 8),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: action,
                                   ),
-                                ],
+                                Container(
+                                  padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+                                  decoration: BoxDecoration(
+                                    color: bubbleColor,
+                                    borderRadius: borderRadius,
+                                    border: Border.all(
+                                      color: (own
+                                              ? const Color(0xFF6BB9FF)
+                                              : const Color(0xFF6E88A2))
+                                          .withValues(alpha: isDark ? 0.22 : 0.16),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      DefaultTextStyle.merge(
+                                        style: TextStyle(
+                                          color: textColor,
+                                          height: 1.35,
+                                        ),
+                                        child: _buildMessageBody(message),
+                                      ),
+                                      if (action != null) ...[
+                                        const SizedBox(height: 6),
+                                        Align(
+                                          alignment: Alignment.centerRight,
+                                          child: action,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                if (lastInRun)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 6,
+                                      right: 6,
+                                      top: 3,
+                                    ),
+                                    child: Text(
+                                      _timeLabel(message.createdAt),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: metaColor.withValues(alpha: 0.9),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),

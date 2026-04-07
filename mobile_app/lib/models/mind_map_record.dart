@@ -4,6 +4,7 @@ class MindMapRecord {
     required this.title,
     required this.topic,
     required this.content,
+    this.drawingJson = '[]',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -12,6 +13,7 @@ class MindMapRecord {
   final String title;
   final String topic;
   final String content;
+  final String drawingJson;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -19,6 +21,7 @@ class MindMapRecord {
     String? title,
     String? topic,
     String? content,
+    String? drawingJson,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -27,6 +30,7 @@ class MindMapRecord {
       title: title ?? this.title,
       topic: topic ?? this.topic,
       content: content ?? this.content,
+      drawingJson: drawingJson ?? this.drawingJson,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -38,6 +42,7 @@ class MindMapRecord {
       'title': title,
       'topic': topic,
       'content': content,
+      'drawingJson': drawingJson,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -49,6 +54,7 @@ class MindMapRecord {
       title: (json['title'] ?? json['topic'] ?? '') as String,
       topic: (json['topic'] ?? json['title'] ?? '') as String,
       content: (json['content'] ?? '') as String,
+      drawingJson: (json['drawingJson'] ?? json['drawing_json'] ?? '[]') as String,
       createdAt: DateTime.parse((json['createdAt'] ?? json['created_at']) as String),
       updatedAt: DateTime.parse((json['updatedAt'] ?? json['updated_at']) as String),
     );

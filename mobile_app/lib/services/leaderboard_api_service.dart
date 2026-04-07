@@ -16,30 +16,65 @@ class LeaderboardApiService {
   Future<void> submitResult(SharedTestResult result) async {
     final uri = Uri.parse(baseUrl);
 
-    // Apps Script /exec redirects POST, so use GET directly for submit
+    // Prefer POST to avoid URL length limits when profile photo base64 is present.
+    try {
+      final postResponse = await _client.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'action': 'submit_result',
+          'id': result.id,
+          'student_name': result.studentName,
+          'subject': result.subject,
+          'score': result.score,
+          'max_marks': result.maxMarks,
+          'percentage': result.percentage,
+          if (result.testTitle != null) 'test_title': result.testTitle,
+          if (result.profilePhotoBase64 != null)
+            'profile_photo_base64': result.profilePhotoBase64,
+          'created_at': result.createdAt.toIso8601String(),
+        }),
+      );
+      if (postResponse.statusCode >= 200 && postResponse.statusCode < 300) {
+        final decoded = _tryDecodeMap(postResponse.body);
+        final isSuccess = decoded == null ||
+            decoded['ok'] == true ||
+            decoded['status'] == 'ok';
+        if (isSuccess) {
+          return;
+        }
+      }
+    } catch (_) {
+      // Fall through to GET fallback for deployments that only accept GET.
+    }
+
     final getUri = uri.replace(
       queryParameters: {
         'action': 'submit_result',
         'id': result.id,
         'student_name': result.studentName,
         'subject': result.subject,
+        'score': result.score.toString(),
+        'max_marks': result.maxMarks.toString(),
         'percentage': result.percentage.toString(),
         if (result.testTitle != null) 'test_title': result.testTitle!,
+        // Do not send profile photo over GET query; payload can exceed URL limits.
         'created_at': result.createdAt.toIso8601String(),
         '_ts': DateTime.now().millisecondsSinceEpoch.toString(),
       },
     );
     final getResponse = await _getWithAppsScriptRedirect(getUri);
     if (getResponse.statusCode < 200 || getResponse.statusCode >= 300) {
-      throw Exception('Submit failed: ${getResponse.statusCode} ${_preview(getResponse.body)}');
+      throw Exception(
+          'Submit failed: ${getResponse.statusCode} ${_preview(getResponse.body)}');
     }
 
     final decoded = _tryDecodeMap(getResponse.body);
-    final isSuccess = decoded == null ||
-        decoded['ok'] == true ||
-        decoded['status'] == 'ok';
+    final isSuccess =
+        decoded == null || decoded['ok'] == true || decoded['status'] == 'ok';
     if (!isSuccess) {
-      throw Exception('Submit failed: ${decoded['error'] ?? _preview(getResponse.body)}');
+      throw Exception(
+          'Submit failed: ${decoded['error'] ?? _preview(getResponse.body)}');
     }
   }
 
@@ -54,6 +89,8 @@ class LeaderboardApiService {
         'result_id': result.id,
         'student_name': result.studentName,
         'subject': result.subject,
+        'score': result.score.toString(),
+        'max_marks': result.maxMarks.toString(),
         'percentage': result.percentage.toString(),
         if (result.testTitle != null) 'test_title': result.testTitle!,
         'created_at': result.createdAt.toUtc().toIso8601String(),
@@ -99,10 +136,62 @@ class LeaderboardApiService {
     return list.map(_parseLeaderboardEntry).toList();
   }
 
+  Future<LeaderboardSyncBundle> fetchSyncBundle({
+    required String subject,
+    int recentLimit = 50,
+    int leaderboardLimit = 50,
+  }) async {
+    try {
+      final dynamic decoded = await _readAction(
+        action: 'sync_bundle',
+        params: {
+          'subject': subject,
+          'recent_limit': '$recentLimit',
+          'leaderboard_limit': '$leaderboardLimit',
+        },
+      );
+
+      if (decoded is Map<String, dynamic>) {
+        final recentList = _extractList(decoded, preferredKey: 'results');
+        final leaderboardList =
+            _extractList(decoded, preferredKey: 'leaderboard');
+        return LeaderboardSyncBundle(
+          recentResults: recentList.map(_parseSharedResult).toList(),
+          leaderboard: leaderboardList.map(_parseLeaderboardEntry).toList(),
+        );
+      }
+    } catch (_) {
+      // Fallback below keeps compatibility with older backend deployments.
+    }
+
+    final payload = await Future.wait([
+      fetchRecentResults(limit: recentLimit),
+      fetchLeaderboard(subject: subject, limit: leaderboardLimit),
+    ]);
+    return LeaderboardSyncBundle(
+      recentResults: payload[0] as List<SharedTestResult>,
+      leaderboard: payload[1] as List<LeaderboardEntry>,
+    );
+  }
+
   Future<dynamic> _readAction({
     required String action,
     Map<String, String> params = const <String, String>{},
   }) async {
+    final postResponse = await _client.post(
+      Uri.parse(baseUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'action': action,
+        ...params,
+      }),
+    );
+    if (postResponse.statusCode >= 200 && postResponse.statusCode < 300) {
+      try {
+        return jsonDecode(postResponse.body);
+      } catch (_) {}
+    }
+
     final uri = Uri.parse(baseUrl).replace(
       queryParameters: {
         'action': action,
@@ -110,7 +199,6 @@ class LeaderboardApiService {
         ...params,
       },
     );
-
     final getResponse = await _getWithAppsScriptRedirect(uri);
     if (getResponse.statusCode >= 200 && getResponse.statusCode < 300) {
       try {
@@ -122,26 +210,18 @@ class LeaderboardApiService {
             bodyPreview.contains('script.google.com')) {
           throw Exception(
             'Apps Script deployment returned HTML instead of JSON for $action. '
-            'Open the deployed /exec web app URL and make sure doGet/doPost are published.',
+            'The leaderboard web app likely needs redeployment or a corrected /exec URL.',
           );
         }
-        // Fall back to POST when Apps Script is deployed with doPost only.
       }
     }
 
-    final postResponse = await _client.post(
-      Uri.parse(baseUrl),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'action': action,
-        ...params,
-      }),
-    );
     if (postResponse.statusCode < 200 || postResponse.statusCode >= 300) {
       throw Exception(
         '$action failed: ${postResponse.statusCode} ${_preview(postResponse.body)}',
       );
     }
+
     try {
       return jsonDecode(postResponse.body);
     } catch (_) {
@@ -239,19 +319,33 @@ class LeaderboardApiService {
     final id = (json['id'] ?? json['result_id'] ?? '').toString();
     final name = (json['student_name'] ?? json['studentName'] ?? '').toString();
     final subject = (json['subject'] ?? '').toString();
+    final scoreRaw = json['score'] ?? json['marks_obtained'];
+    final maxMarksRaw = json['max_marks'] ?? json['maxMarks'];
     final percentageRaw = json['percentage'] ?? json['avg_percentage'] ?? 0;
+    final scoreValue = scoreRaw is num
+        ? scoreRaw.toDouble()
+        : double.tryParse((scoreRaw ?? '').toString());
+    final maxMarksValue = maxMarksRaw is num
+        ? maxMarksRaw.toDouble()
+        : double.tryParse((maxMarksRaw ?? '').toString());
     final percentageValue = percentageRaw is num
-      ? percentageRaw.toDouble()
-      : double.tryParse(percentageRaw.toString()) ?? 0;
+        ? percentageRaw.toDouble()
+        : double.tryParse(percentageRaw.toString()) ?? 0;
+    final resolvedScore = scoreValue ?? percentageValue;
+    final resolvedMaxMarks =
+      (maxMarksValue != null && maxMarksValue > 0) ? maxMarksValue : 100.0;
     final title = json['test_title'] ?? json['testTitle'];
     final createdRaw = json['created_at'] ?? json['createdAt'];
     final createdAt = DateTime.tryParse((createdRaw ?? '').toString()) ??
         DateTime.fromMillisecondsSinceEpoch(0);
+    final photoRaw =
+        json['profile_photo_base64'] ?? json['profilePhotoBase64'] ?? json['avatar'];
 
     final fallbackId = _stableResultKey(
       studentName: name,
       subject: subject,
-      percentage: percentageValue,
+      score: resolvedScore,
+      maxMarks: resolvedMaxMarks,
       createdAt: createdAt,
       testTitle: title?.toString(),
     );
@@ -260,9 +354,12 @@ class LeaderboardApiService {
       id: id.isEmpty ? fallbackId : id,
       studentName: name,
       subject: subject,
-      percentage: percentageValue,
+      score: resolvedScore,
+      maxMarks: resolvedMaxMarks,
       createdAt: createdAt,
       testTitle: title?.toString(),
+      profilePhotoBase64:
+          photoRaw == null ? null : photoRaw.toString().trim().isEmpty ? null : photoRaw.toString(),
     );
   }
 
@@ -270,7 +367,8 @@ class LeaderboardApiService {
     return _stableResultKey(
       studentName: result.studentName,
       subject: result.subject,
-      percentage: result.percentage,
+      score: result.score,
+      maxMarks: result.maxMarks,
       createdAt: result.createdAt,
       testTitle: result.testTitle,
     );
@@ -279,7 +377,8 @@ class LeaderboardApiService {
   String _stableResultKey({
     required String studentName,
     required String subject,
-    required double percentage,
+    required double score,
+    required double maxMarks,
     required DateTime createdAt,
     required String? testTitle,
   }) {
@@ -298,7 +397,8 @@ class LeaderboardApiService {
     return [
       normalizedName,
       normalizedSubject,
-      percentage.toStringAsFixed(1),
+      score.toStringAsFixed(2),
+      maxMarks.toStringAsFixed(2),
       createdUtcTruncated.toIso8601String(),
       normalizedTitle,
     ].join('|');
@@ -309,14 +409,46 @@ class LeaderboardApiService {
     final averageRaw = json['average_percentage'] ??
         json['avg_percentage'] ??
         json['percentage'];
+    final averageScoreRaw = json['average_score'] ??
+      json['avg_score'] ??
+      json['score'] ??
+      json['marks_obtained'];
+    final averageMaxMarksRaw =
+      json['average_max_marks'] ?? json['avg_max_marks'] ?? json['max_marks'];
     final updatedRaw = json['updated_at'] ?? json['last_updated'];
+    final photoRaw =
+      json['profile_photo_base64'] ?? json['profilePhotoBase64'] ?? json['avatar'];
+
+    final parsedAveragePercentage = averageRaw is num
+      ? averageRaw.toDouble()
+      : double.tryParse((averageRaw ?? '').toString()) ?? 0;
+    final parsedAverageScore = averageScoreRaw is num
+      ? averageScoreRaw.toDouble()
+      : double.tryParse((averageScoreRaw ?? '').toString());
+    final parsedAverageMaxMarks = averageMaxMarksRaw is num
+      ? averageMaxMarksRaw.toDouble()
+      : double.tryParse((averageMaxMarksRaw ?? '').toString());
+
+    final resolvedAverageScore = parsedAverageScore ?? parsedAveragePercentage;
+    final resolvedAverageMaxMarks =
+      (parsedAverageMaxMarks != null && parsedAverageMaxMarks > 0)
+        ? parsedAverageMaxMarks
+        : 100.0;
+
+    final attempts = attemptsRaw is num
+      ? attemptsRaw.toInt()
+      : int.tryParse((attemptsRaw ?? '').toString()) ?? 1;
 
     return LeaderboardEntry(
       studentName:
           (json['student_name'] ?? json['studentName'] ?? 'Unknown').toString(),
       subject: (json['subject'] ?? '').toString(),
-      attempts: (attemptsRaw as num).toInt(),
-      averagePercentage: (averageRaw as num).toDouble(),
+      attempts: attempts,
+      averagePercentage: parsedAveragePercentage,
+      averageScore: resolvedAverageScore,
+      averageMaxMarks: resolvedAverageMaxMarks,
+      profilePhotoBase64:
+        photoRaw == null ? null : photoRaw.toString().trim().isEmpty ? null : photoRaw.toString(),
       updatedAt: DateTime.tryParse((updatedRaw ?? '').toString()) ??
           DateTime.fromMillisecondsSinceEpoch(0),
     );
@@ -329,6 +461,9 @@ class LeaderboardEntry {
     required this.subject,
     required this.attempts,
     required this.averagePercentage,
+    required this.averageScore,
+    required this.averageMaxMarks,
+    this.profilePhotoBase64,
     required this.updatedAt,
   });
 
@@ -336,5 +471,18 @@ class LeaderboardEntry {
   final String subject;
   final int attempts;
   final double averagePercentage;
+  final double averageScore;
+  final double averageMaxMarks;
+  final String? profilePhotoBase64;
   final DateTime updatedAt;
+}
+
+class LeaderboardSyncBundle {
+  const LeaderboardSyncBundle({
+    required this.recentResults,
+    required this.leaderboard,
+  });
+
+  final List<SharedTestResult> recentResults;
+  final List<LeaderboardEntry> leaderboard;
 }

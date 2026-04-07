@@ -28,8 +28,7 @@ class _ExamCalendarService {
 
       await _openCalendar(
         title: '📚 $examTitle — Exam Countdown',
-        description:
-            'Subject: $subject\n'
+        description: 'Subject: $subject\n'
             'Exam date: ${_readable(examOnly)}\n'
             'Daily reminder until 2 days before your exam.',
         startDate: recurringStart,
@@ -43,8 +42,7 @@ class _ExamCalendarService {
       if (!eveDate.isBefore(todayOnly)) {
         await _openCalendar(
           title: '⚡ Tomorrow is your $examTitle exam! Last chance to revise!',
-          description:
-              'Subject: $subject\n'
+          description: 'Subject: $subject\n'
               'Your exam is TOMORROW — ${_readable(examOnly)}.\n'
               'Prepare everything tonight!',
           startDate: eveDate,
@@ -57,8 +55,7 @@ class _ExamCalendarService {
     if (!examOnly.isBefore(todayOnly)) {
       await _openCalendar(
         title: '🎯 TODAY IS YOUR $examTitle EXAM! ALL THE BEST!!!',
-        description:
-            'Subject: $subject\n'
+        description: 'Subject: $subject\n'
             'This is it! You\'ve got this. Give it your all! 💪',
         startDate: examOnly,
         rrule: null,
@@ -80,7 +77,11 @@ class _ExamCalendarService {
 
     // Build timed start (at user's chosen reminder time) and end (1 hour later)
     final timedStart = DateTime(
-      startDate.year, startDate.month, startDate.day, hour, minute,
+      startDate.year,
+      startDate.month,
+      startDate.day,
+      hour,
+      minute,
     );
     final timedEnd = timedStart.add(const Duration(hours: 1));
 
@@ -95,8 +96,7 @@ class _ExamCalendarService {
 
     if (rrule != null) {
       // Replace the date-only UNTIL with a datetime UNTIL matching the timed event
-      final untilTime =
-          '${hour.toString().padLeft(2, '0')}'
+      final untilTime = '${hour.toString().padLeft(2, '0')}'
           '${minute.toString().padLeft(2, '0')}00Z';
       final updatedRrule = rrule.replaceFirstMapped(
         RegExp(r'UNTIL=(\d{8})T000000Z'),
@@ -129,8 +129,7 @@ class _ExamCalendarService {
   }
 
   /// Format: YYYYMMDDTHHmmss (local time, no Z — respects user's timezone)
-  String _dateTime(DateTime dt) =>
-      '${dt.year}'
+  String _dateTime(DateTime dt) => '${dt.year}'
       '${dt.month.toString().padLeft(2, '0')}'
       '${dt.day.toString().padLeft(2, '0')}'
       'T'
@@ -143,8 +142,19 @@ class _ExamCalendarService {
 
   String _readable(DateTime dt) {
     const months = [
-      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${dt.day} ${months[dt.month]} ${dt.year}';
   }
@@ -188,9 +198,16 @@ class _ExamStoreService {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class StudyPlannerScreen extends StatefulWidget {
-  const StudyPlannerScreen({super.key, required this.storeService});
+  const StudyPlannerScreen({
+    super.key,
+    required this.storeService,
+    this.showExamCountdown = true,
+    this.showFocusTimer = true,
+  });
 
   final LocalStoreService storeService;
+  final bool showExamCountdown;
+  final bool showFocusTimer;
 
   @override
   State<StudyPlannerScreen> createState() => _StudyPlannerScreenState();
@@ -234,8 +251,8 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
         _reminderHour = picked.hour;
         _reminderMinute = picked.minute;
       });
-      await widget.storeService.saveDailyReminderTime(
-          _reminderHour, _reminderMinute);
+      await widget.storeService
+          .saveDailyReminderTime(_reminderHour, _reminderMinute);
     }
   }
 
@@ -269,14 +286,12 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
               children: [
                 TextField(
                   controller: titleController,
-                  decoration:
-                      const InputDecoration(labelText: 'Exam title'),
+                  decoration: const InputDecoration(labelText: 'Exam title'),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: subjectController,
-                  decoration:
-                      const InputDecoration(labelText: 'Subject'),
+                  decoration: const InputDecoration(labelText: 'Subject'),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
@@ -285,8 +300,7 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
                       context: context,
                       initialDate: examDate,
                       firstDate: DateTime.now(),
-                      lastDate:
-                          DateTime.now().add(const Duration(days: 730)),
+                      lastDate: DateTime.now().add(const Duration(days: 730)),
                     );
                     if (picked == null) return;
                     setDialogState(() {
@@ -313,7 +327,9 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
             FilledButton(
               onPressed: () {
                 if (titleController.text.trim().isEmpty ||
-                    subjectController.text.trim().isEmpty) { return; }
+                    subjectController.text.trim().isEmpty) {
+                  return;
+                }
                 Navigator.of(context).pop(true);
               },
               child: const Text('Save Exam'),
@@ -354,8 +370,8 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text(
-            'Google Calendar will open 3 times. Tap Save each time ✅'),
+        content:
+            Text('Google Calendar will open 3 times. Tap Save each time ✅'),
         duration: Duration(seconds: 4),
       ),
     );
@@ -432,8 +448,7 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-          content:
-              Text('Focus timer started. You can keep using the app.')),
+          content: Text('Focus timer started. You can keep using the app.')),
     );
   }
 
@@ -451,177 +466,270 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
     return h > 0 ? '$h:$m:$s' : '$m:$s';
   }
 
+  Widget _sectionCard({required Widget child, EdgeInsets? padding}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: padding ?? const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    Widget examStatus(int daysLeft) {
+      final String text;
+      final Color color;
+      if (daysLeft == 0) {
+        text = 'Today';
+        color = const Color(0xFFE65100);
+      } else if (daysLeft == 1) {
+        text = 'Tomorrow';
+        color = const Color(0xFF006C9B);
+      } else {
+        text = '$daysLeft days left';
+        color = scheme.primary;
+      }
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+              color: color, fontWeight: FontWeight.w700, fontSize: 12),
+        ),
+      );
+    }
 
     return _loading
         ? const Center(child: CircularProgressIndicator())
         : ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  color: scheme.surface,
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Study Planner',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Set smart reminders, build exam momentum, and lock in focused sessions.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (widget.showExamCountdown || widget.showFocusTimer)
+                _sectionCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Exam Countdown',
-                          style: theme.textTheme.titleLarge),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Add an exam and 3 Google Calendar reminders are created automatically — '
-                        'a daily countdown, an eve-of-exam alert, and an exam-day notification.',
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Text('Reminder time: ',
-                              style: theme.textTheme.bodyMedium),
-                          Text(
-                            '${_reminderHour.toString().padLeft(2, '0')}:'
-                            '${_reminderMinute.toString().padLeft(2, '0')}',
-                            style: theme.textTheme.titleMedium,
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: _pickReminderTime,
-                            icon: const Icon(Icons.access_time),
-                            label: const Text('Change'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton.icon(
-                        onPressed: _addExam,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Add Important Exam'),
-                      ),
-                      const SizedBox(height: 18),
-                      Text('Focus Timer',
-                          style: theme.textTheme.titleMedium),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          ChoiceChip(
-                            label: const Text('25m'),
-                            selected: _focusMinutes == 25,
-                            onSelected: (_) =>
-                                setState(() => _focusMinutes = 25),
-                          ),
-                          const SizedBox(width: 8),
-                          ChoiceChip(
-                            label: const Text('45m'),
-                            selected: _focusMinutes == 45,
-                            onSelected: (_) =>
-                                setState(() => _focusMinutes = 45),
-                          ),
-                          const SizedBox(width: 8),
-                          ChoiceChip(
-                            label: const Text('60m'),
-                            selected: _focusMinutes == 60,
-                            onSelected: (_) =>
-                                setState(() => _focusMinutes = 60),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      ValueListenableBuilder<Duration>(
-                        valueListenable: FocusTimerService.instance.remaining,
-                        builder: (_, remaining, __) {
-                          final hasTime = remaining > Duration.zero;
-                          return Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  hasTime
-                                      ? 'Remaining: ${_formatDuration(remaining)}'
-                                      : 'No active focus session',
-                                  style: theme.textTheme.titleMedium,
-                                ),
+                      if (widget.showExamCountdown) ...[
+                        Text('Exam Countdown',
+                            style: theme.textTheme.titleLarge),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Add an exam and get 3 Google Calendar reminders automatically: countdown, eve-alert, and exam-day boost.',
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: scheme.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(999),
                               ),
-                              if (!hasTime)
-                                FilledButton(
-                                  onPressed: _startFocusTimer,
-                                  child: const Text('Start'),
-                                )
-                              else
-                                OutlinedButton(
-                                  onPressed: _stopFocusTimer,
-                                  child: const Text('Stop'),
+                              child: Text(
+                                'Reminder: ${_reminderHour.toString().padLeft(2, '0')}:${_reminderMinute.toString().padLeft(2, '0')}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _pickReminderTime,
+                              icon: const Icon(Icons.access_time),
+                              label: const Text('Change'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: _addExam,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add Important Exam'),
+                        ),
+                      ],
+                      if (widget.showExamCountdown && widget.showFocusTimer)
+                        const SizedBox(height: 18),
+                      if (widget.showFocusTimer) ...[
+                        Text('Focus Timer', style: theme.textTheme.titleLarge),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            ChoiceChip(
+                              label: const Text('25m'),
+                              selected: _focusMinutes == 25,
+                              onSelected: (_) =>
+                                  setState(() => _focusMinutes = 25),
+                            ),
+                            ChoiceChip(
+                              label: const Text('45m'),
+                              selected: _focusMinutes == 45,
+                              onSelected: (_) =>
+                                  setState(() => _focusMinutes = 45),
+                            ),
+                            ChoiceChip(
+                              label: const Text('60m'),
+                              selected: _focusMinutes == 60,
+                              onSelected: (_) =>
+                                  setState(() => _focusMinutes = 60),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        ValueListenableBuilder<Duration>(
+                          valueListenable: FocusTimerService.instance.remaining,
+                          builder: (_, remaining, __) {
+                            final hasTime = remaining > Duration.zero;
+                            return Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    hasTime
+                                        ? 'Remaining: ${_formatDuration(remaining)}'
+                                        : 'No active focus session',
+                                    style: theme.textTheme.titleMedium,
+                                  ),
                                 ),
-                            ],
-                          );
-                        },
-                      ),
+                                if (!hasTime)
+                                  FilledButton(
+                                    onPressed: _startFocusTimer,
+                                    child: const Text('Start'),
+                                  )
+                                else
+                                  OutlinedButton(
+                                    onPressed: _stopFocusTimer,
+                                    child: const Text('Stop'),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              if (_exams.isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(14),
-                    child: Text('No upcoming exams yet.'),
-                  ),
+              if (widget.showExamCountdown && _exams.isEmpty)
+                _sectionCard(
+                  child: const Text('No upcoming exams yet.'),
+                  padding: const EdgeInsets.all(14),
                 )
-              else
+              else if (widget.showExamCountdown)
                 ..._exams.map((exam) {
                   final today = DateTime.now();
                   final todayOnly =
                       DateTime(today.year, today.month, today.day);
-                  final examOnly = DateTime(exam.examDate.year,
-                      exam.examDate.month, exam.examDate.day);
+                  final examOnly = DateTime(
+                    exam.examDate.year,
+                    exam.examDate.month,
+                    exam.examDate.day,
+                  );
                   final daysLeft = examOnly.difference(todayOnly).inDays;
 
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: ListTile(
-                      title: Text(exam.title),
-                      subtitle: Text(
-                        '${exam.subject} • ${_formatDate(exam.examDate)} • '
-                        '${daysLeft == 0 ? 'Today! 🎯' : daysLeft == 1 ? 'Tomorrow! ⚡' : '$daysLeft days left'}',
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                                Icons.calendar_month_outlined),
-                            tooltip: 'Re-add to Google Calendar',
-                            onPressed: () async {
-                              final messenger = ScaffoldMessenger.of(context);
-                              messenger.showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Google Calendar will open 3 times. Tap Save each time ✅'),
-                                  duration: Duration(seconds: 4),
+                  return _sectionCard(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                exam.title,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
                                 ),
-                              );
-                              try {
-                                await _calendar.createAllEvents(
-                                  examTitle: exam.title,
-                                  subject: exam.subject,
-                                  examDate: exam.examDate,
-                                  reminderHour: _reminderHour,
-                                  reminderMinute: _reminderMinute,
+                              ),
+                            ),
+                            examStatus(daysLeft),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${exam.subject} • ${_formatDate(exam.examDate)}',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.calendar_month_outlined),
+                              label: const Text('Re-add reminders'),
+                              onPressed: () async {
+                                final messenger = ScaffoldMessenger.of(context);
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        'Google Calendar will open 3 times. Tap Save each time ✅'),
+                                    duration: Duration(seconds: 4),
+                                  ),
                                 );
-                              } catch (e) {
-                                if (mounted) {
-                                  messenger.showSnackBar(SnackBar(
-                                      content: Text('$e')));
+                                try {
+                                  await _calendar.createAllEvents(
+                                    examTitle: exam.title,
+                                    subject: exam.subject,
+                                    examDate: exam.examDate,
+                                    reminderHour: _reminderHour,
+                                    reminderMinute: _reminderMinute,
+                                  );
+                                } catch (e) {
+                                  if (mounted) {
+                                    messenger.showSnackBar(
+                                      SnackBar(content: Text('$e')),
+                                    );
+                                  }
                                 }
-                              }
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            tooltip: 'Remove exam',
-                            onPressed: () => _deleteExam(exam),
-                          ),
-                        ],
-                      ),
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              tooltip: 'Remove exam',
+                              onPressed: () => _deleteExam(exam),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   );
                 }),

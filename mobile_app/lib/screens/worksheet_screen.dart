@@ -17,12 +17,15 @@ class WorksheetScreen extends StatefulWidget {
 
 class _WorksheetScreenState extends State<WorksheetScreen> {
   final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _subjectController = TextEditingController(text: 'Physics');
+  final TextEditingController _subjectController =
+      TextEditingController(text: 'Physics');
   final TextEditingController _topicController = TextEditingController();
-  final TextEditingController _countController = TextEditingController(text: '5');
+  final TextEditingController _countController =
+      TextEditingController(text: '5');
   final TextEditingController _questionsController = TextEditingController();
 
-  final ChatApiService _chatService = ChatApiService(baseUrl: AppConfig.backendBaseUrl);
+  final ChatApiService _chatService =
+      ChatApiService(baseUrl: AppConfig.backendBaseUrl);
   static const List<String> _difficultyOptions = <String>[
     'Easy',
     'Medium',
@@ -68,7 +71,8 @@ class _WorksheetScreenState extends State<WorksheetScreen> {
     if (topic.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enter a topic first to generate questions.')),
+          const SnackBar(
+              content: Text('Enter a topic first to generate questions.')),
         );
       }
       return;
@@ -78,10 +82,10 @@ class _WorksheetScreenState extends State<WorksheetScreen> {
     try {
       final typesText = _selectedQuestionTypes.join(', ');
       final prompt =
-        'Create $count school-level $subject worksheet questions on topic: $topic. '
-        'Difficulty: $_selectedDifficulty. '
-        'Question types to include: $typesText. '
-        'Return only numbered questions in plain text.';
+          'Create $count school-level $subject worksheet questions on topic: $topic. '
+          'Difficulty: $_selectedDifficulty. '
+          'Question types to include: $typesText. '
+          'Return only numbered questions in plain text.';
       final answer = await _chatService.sendMessage(prompt);
       if (!mounted) {
         return;
@@ -105,17 +109,14 @@ class _WorksheetScreenState extends State<WorksheetScreen> {
     final title = _titleController.text.trim();
     final subject = _subjectController.text.trim();
     final topic = _topicController.text.trim();
-    final lines = _questionsController.text
-        .split('\n')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
+    final lines = _splitIntoQuestions(_questionsController.text);
 
     if (subject.isEmpty || topic.isEmpty || lines.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Subject, topic, and at least one question are required.'),
+            content:
+                Text('Subject, topic, and at least one question are required.'),
           ),
         );
       }
@@ -159,6 +160,65 @@ class _WorksheetScreenState extends State<WorksheetScreen> {
     }
   }
 
+  List<String> _splitIntoQuestions(String raw) {
+    final normalized = raw.replaceAll('\r\n', '\n').trim();
+    if (normalized.isEmpty) {
+      return <String>[];
+    }
+
+    final lines = normalized
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+
+    final questionStart = RegExp(
+      r'^(?:Q(?:uestion)?\s*\d+|\d+)[\).:\-]\s+|^\(\d+\)\s+',
+      caseSensitive: false,
+    );
+    final optionLine = RegExp(
+      r'^(?:[A-Da-d]|[ivxIVX]{1,4})[\).]\s+|^Option\s+[A-Da-d][\s:.-]',
+      caseSensitive: false,
+    );
+
+    final grouped = <String>[];
+    final buffer = <String>[];
+
+    void flush() {
+      if (buffer.isEmpty) {
+        return;
+      }
+      grouped.add(buffer.join('\n').trim());
+      buffer.clear();
+    }
+
+    var sawExplicitQuestion = false;
+    for (final line in lines) {
+      final isQuestionStart = questionStart.hasMatch(line);
+      final isOption = optionLine.hasMatch(line);
+
+      if (isQuestionStart) {
+        sawExplicitQuestion = true;
+        flush();
+        buffer.add(line);
+        continue;
+      }
+
+      if (buffer.isEmpty) {
+        buffer.add(line);
+      } else {
+        // Attach options/sub-lines to the current question block.
+        buffer.add(line);
+        if (!sawExplicitQuestion && !isOption) {
+          flush();
+        }
+      }
+    }
+
+    flush();
+    return grouped.where((q) => q.trim().isNotEmpty).toList();
+  }
+
   Future<void> _deleteWorksheet(String id) async {
     setState(() {
       _worksheets.removeWhere((item) => item.id == id);
@@ -178,128 +238,170 @@ class _WorksheetScreenState extends State<WorksheetScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    Widget sectionCard(Widget child) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: child,
+      );
+    }
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Worksheet Maker', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _titleController,
-                    decoration: const InputDecoration(labelText: 'Worksheet title'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _subjectController,
-                    decoration: const InputDecoration(labelText: 'Subject'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _topicController,
-                    decoration: const InputDecoration(labelText: 'Topic'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _countController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Question count for AI draft'),
-                  ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    initialValue: _selectedDifficulty,
-                    decoration: const InputDecoration(labelText: 'Difficulty'),
-                    items: _difficultyOptions
-                        .map(
-                          (level) => DropdownMenuItem<String>(
-                            value: level,
-                            child: Text(level),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value == null) {
-                        return;
-                      }
-                      setState(() => _selectedDifficulty = value);
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Question types (choose multiple)',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _questionTypeOptions.map((type) {
-                      final selected = _selectedQuestionTypes.contains(type);
-                      return FilterChip(
-                        label: Text(type),
-                        selected: selected,
-                        onSelected: (on) {
-                          setState(() {
-                            if (on) {
-                              _selectedQuestionTypes.add(type);
-                              return;
-                            }
-                            if (_selectedQuestionTypes.length > 1) {
-                              _selectedQuestionTypes.remove(type);
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _generating ? null : _generateDraft,
-                          child: _generating
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Text('Generate Draft'),
-                        ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              color: scheme.surface,
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Worksheet Studio',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: _saveWorksheet,
-                          child: const Text('Save Worksheet'),
-                        ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Draft, customize, and save practice sheets in minutes.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _questionsController,
-                    minLines: 8,
-                    maxLines: 12,
-                    decoration: const InputDecoration(
-                      labelText: 'Questions (one per line)',
-                      alignLabelWithHint: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Card(
-            child: _worksheets.isEmpty
+          const SizedBox(height: 14),
+          sectionCard(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Create Worksheet',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _titleController,
+                  decoration:
+                      const InputDecoration(labelText: 'Worksheet title'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _subjectController,
+                  decoration: const InputDecoration(labelText: 'Subject'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _topicController,
+                  decoration: const InputDecoration(labelText: 'Topic'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _countController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                      labelText: 'Question count for AI draft'),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedDifficulty,
+                  decoration: const InputDecoration(labelText: 'Difficulty'),
+                  items: _difficultyOptions
+                      .map(
+                        (level) => DropdownMenuItem<String>(
+                          value: level,
+                          child: Text(level),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) {
+                      return;
+                    }
+                    setState(() => _selectedDifficulty = value);
+                  },
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Question types (choose multiple)',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _questionTypeOptions.map((type) {
+                    final selected = _selectedQuestionTypes.contains(type);
+                    return FilterChip(
+                      label: Text(type),
+                      selected: selected,
+                      onSelected: (on) {
+                        setState(() {
+                          if (on) {
+                            _selectedQuestionTypes.add(type);
+                            return;
+                          }
+                          if (_selectedQuestionTypes.length > 1) {
+                            _selectedQuestionTypes.remove(type);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _generating ? null : _generateDraft,
+                        child: _generating
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('Generate Draft'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _saveWorksheet,
+                        child: const Text('Save Worksheet'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _questionsController,
+                  minLines: 8,
+                  maxLines: 12,
+                  decoration: const InputDecoration(
+                    labelText: 'Questions (one per line)',
+                    alignLabelWithHint: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          sectionCard(
+            _worksheets.isEmpty
                 ? const Padding(
                     padding: EdgeInsets.all(16),
                     child: Text('No worksheets saved yet'),
@@ -324,8 +426,13 @@ class _WorksheetScreenState extends State<WorksheetScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 for (final question in item.questions)
-                                  Card(
+                                  Container(
                                     margin: const EdgeInsets.only(bottom: 8),
+                                    decoration: BoxDecoration(
+                                      color: scheme.primary
+                                          .withValues(alpha: 0.06),
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
                                     child: Padding(
                                       padding: const EdgeInsets.all(12),
                                       child: Row(
@@ -334,14 +441,19 @@ class _WorksheetScreenState extends State<WorksheetScreen> {
                                             child: SelectableText(question),
                                           ),
                                           IconButton(
-                                            icon: const Icon(Icons.copy, size: 18),
+                                            icon: const Icon(Icons.copy,
+                                                size: 18),
                                             tooltip: 'Copy question',
                                             onPressed: () {
-                                              Clipboard.setData(ClipboardData(text: question));
-                                              ScaffoldMessenger.of(context).showSnackBar(
+                                              Clipboard.setData(ClipboardData(
+                                                  text: question));
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
                                                 const SnackBar(
-                                                  content: Text('Question copied to clipboard'),
-                                                  duration: Duration(seconds: 1),
+                                                  content: Text(
+                                                      'Question copied to clipboard'),
+                                                  duration:
+                                                      Duration(seconds: 1),
                                                 ),
                                               );
                                             },

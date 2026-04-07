@@ -6,9 +6,13 @@ class LearningJourneyScreen extends StatefulWidget {
   const LearningJourneyScreen({
     super.key,
     required this.storeService,
+    this.journeyId,
+    this.startFresh = false,
   });
 
   final LocalStoreService storeService;
+  final String? journeyId;
+  final bool startFresh;
 
   @override
   State<LearningJourneyScreen> createState() => _LearningJourneyScreenState();
@@ -208,7 +212,7 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
         _JourneySection(title: 'UNDERSTAND THE CONCEPT', tasks: [
           _JourneyTask(
               id: 'mat_uc_1',
-            label: 'Explain the method out loud as if teaching someone',
+              label: 'Explain the method out loud as if teaching someone',
               xp: 10),
           _JourneyTask(
               id: 'mat_uc_2',
@@ -403,6 +407,7 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
   };
 
   final TextEditingController _examNameController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   String _selectedSubject = 'physics';
   Set<String> _completedTaskIds = <String>{};
   Map<String, List<_JourneyTask>> _otherTasksBySubject =
@@ -411,6 +416,9 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
   List<String> _optionalMilestones = <String>[];
   int _customTaskCounter = 0;
   bool _loading = true;
+  bool _isJourneySaved = false;
+  bool _showJourneySetup = true;
+  String? _journeyId;
 
   @override
   void initState() {
@@ -419,20 +427,33 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
   }
 
   Future<void> _loadState() async {
-    final state = await widget.storeService.loadLearningJourneyState();
+    Map<String, dynamic>? state;
+    if (widget.startFresh) {
+      state = null;
+    } else if (widget.journeyId != null && widget.journeyId!.trim().isNotEmpty) {
+      final record =
+          await widget.storeService.loadLearningJourneyRecord(widget.journeyId!);
+      state = record?.state;
+    } else {
+      state = await widget.storeService.loadLearningJourneyState();
+    }
+
     if (!mounted) {
       return;
     }
 
     if (state != null) {
-      final subjectFromState = state['subject']?.toString() ?? _selectedSubject;
+      final loadedState = state;
+      final subjectFromState =
+        loadedState['subject']?.toString() ?? _selectedSubject;
       final completed =
-          (state['completedTaskIds'] as List<dynamic>? ?? const <dynamic>[])
+        (loadedState['completedTaskIds'] as List<dynamic>? ??
+            const <dynamic>[])
               .map((item) => item.toString())
               .toSet();
       final loadedOtherBySubject = <String, List<_JourneyTask>>{};
       final rawOtherBySubject =
-          state['otherTasksBySubject'] as Map<String, dynamic>? ??
+        loadedState['otherTasksBySubject'] as Map<String, dynamic>? ??
               const <String, dynamic>{};
       for (final entry in rawOtherBySubject.entries) {
         final tasks = (entry.value as List<dynamic>? ?? const <dynamic>[])
@@ -443,19 +464,22 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
       }
 
       final loadedOptionalTasks =
-          (state['optionalTasks'] as List<dynamic>? ?? const <dynamic>[])
+          (loadedState['optionalTasks'] as List<dynamic>? ??
+            const <dynamic>[])
               .whereType<Map<String, dynamic>>()
               .map(_taskFromJson)
               .toList();
 
       final loadedOptionalMilestones =
-          (state['optionalMilestones'] as List<dynamic>? ?? const <dynamic>[])
+          (loadedState['optionalMilestones'] as List<dynamic>? ??
+            const <dynamic>[])
               .map((item) => item.toString())
               .where((item) => item.trim().isNotEmpty)
               .toList();
 
       setState(() {
-        _examNameController.text = state['examName']?.toString() ?? '';
+        _examNameController.text = loadedState['examName']?.toString() ?? '';
+        _journeyId = loadedState['id']?.toString() ?? widget.journeyId;
         _selectedSubject = _templates.containsKey(subjectFromState)
             ? subjectFromState
             : _selectedSubject;
@@ -464,8 +488,19 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
         _optionalTasks = loadedOptionalTasks;
         _optionalMilestones = loadedOptionalMilestones;
         _customTaskCounter =
-            int.tryParse(state['customTaskCounter']?.toString() ?? '') ?? 0;
+          int.tryParse(loadedState['customTaskCounter']?.toString() ?? '') ??
+            0;
         _loading = false;
+        _isJourneySaved = true;
+        _showJourneySetup = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
       });
       return;
     }
@@ -475,20 +510,67 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
     });
   }
 
-  Future<void> _saveState() async {
+  Future<void> _saveState({
+    bool showFeedback = false,
+    bool markSaved = false,
+  }) async {
+    final examName = _examNameController.text.trim();
+    final subjectLabel = _templates[_selectedSubject]?.subjectLabel ?? 'Journey';
+    final allTasks = _allTasksForCurrentSubject();
+    final totalTasks = allTasks.length;
+    final title = examName.isEmpty ? '$subjectLabel Journey' : examName;
+
+    final saveId =
+        _journeyId ?? 'learning_journey_${DateTime.now().microsecondsSinceEpoch}';
+
     final otherJson = <String, List<Map<String, dynamic>>>{};
     for (final entry in _otherTasksBySubject.entries) {
       otherJson[entry.key] = entry.value.map(_taskToJson).toList();
     }
 
     await widget.storeService.saveLearningJourneyState({
-      'examName': _examNameController.text.trim(),
+      'id': saveId,
+      'title': title,
+      'examName': examName,
       'subject': _selectedSubject,
+      'totalTasks': totalTasks,
       'completedTaskIds': _completedTaskIds.toList(),
       'otherTasksBySubject': otherJson,
       'optionalTasks': _optionalTasks.map(_taskToJson).toList(),
       'optionalMilestones': _optionalMilestones,
       'customTaskCounter': _customTaskCounter,
+    });
+
+    _journeyId = saveId;
+
+    if (!mounted) {
+      return;
+    }
+
+    if (markSaved) {
+      setState(() {
+        _isJourneySaved = true;
+        _showJourneySetup = false;
+      });
+    }
+
+    if (showFeedback) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Journey saved.')),
+      );
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
@@ -673,9 +755,34 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
       _optionalTasks = <_JourneyTask>[];
       _optionalMilestones = <String>[];
       _customTaskCounter = 0;
+      _isJourneySaved = false;
+      _showJourneySetup = true;
+      _journeyId = null;
     });
 
     await widget.storeService.saveLearningJourneyState(null);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _examNameController.dispose();
+    super.dispose();
+  }
+
+  void _startNewJourney() {
+    setState(() {
+      _journeyId = null;
+      _examNameController.clear();
+      _selectedSubject = 'physics';
+      _completedTaskIds = <String>{};
+      _otherTasksBySubject = <String, List<_JourneyTask>>{};
+      _optionalTasks = <_JourneyTask>[];
+      _optionalMilestones = <String>[];
+      _customTaskCounter = 0;
+      _isJourneySaved = false;
+      _showJourneySetup = true;
+    });
   }
 
   Future<void> _addChecklistToOther() async {
@@ -890,12 +997,6 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
   }
 
   @override
-  void dispose() {
-    _examNameController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
@@ -916,86 +1017,102 @@ class _LearningJourneyScreenState extends State<LearningJourneyScreen> {
     final milestoneCount = _achievedMilestones(progress, milestones.length);
 
     return ListView(
+      controller: _scrollController,
       padding: const EdgeInsets.all(16),
       children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Start A Learning Journey',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _examNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Exam name',
-                    hintText: 'e.g. Mid-term 2026',
-                  ),
-                  onChanged: (_) => _saveState(),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedSubject,
-                  decoration: const InputDecoration(labelText: 'Subject'),
-                  items: _templates.values
-                      .map(
-                        (item) => DropdownMenuItem<String>(
-                          value: item.key,
-                          child: Text(item.subjectLabel),
+        if (!_isJourneySaved || _showJourneySetup) ...[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Create Learning Journey',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textScaler: MediaQuery.textScalerOf(context)
+                        .clamp(maxScaleFactor: 1.2),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
                         ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
-                    _changeSubject(value);
-                  },
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: _saveState,
-                      icon: const Icon(Icons.rocket_launch_outlined),
-                      label: const Text('Save Journey'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _examNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Exam name',
+                      hintText: 'e.g. Mid-term 2026',
                     ),
-                    OutlinedButton.icon(
-                      onPressed: _resetJourney,
-                      icon: const Icon(Icons.refresh_outlined),
-                      label: const Text('Reset Progress'),
-                    ),
-                    if (_selectedSubject == 'optional')
-                      OutlinedButton.icon(
-                        onPressed: _addChecklistToOptional,
-                        icon: const Icon(Icons.add_task_outlined),
-                        label: const Text('Add Checklist'),
-                      )
-                    else
-                      OutlinedButton.icon(
-                        onPressed: _addChecklistToOther,
-                        icon: const Icon(Icons.playlist_add_outlined),
-                        label: const Text('Add To OTHER'),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedSubject,
+                    decoration: const InputDecoration(labelText: 'Subject'),
+                    items: _templates.values
+                        .map(
+                          (item) => DropdownMenuItem<String>(
+                            value: item.key,
+                            child: Text(item.subjectLabel),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) {
+                        return;
+                      }
+                      _changeSubject(value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () => _saveState(
+                          showFeedback: true,
+                          markSaved: true,
+                        ),
+                        icon: const Icon(Icons.rocket_launch_outlined),
+                        label: const Text('Save Journey'),
                       ),
-                    if (_selectedSubject == 'optional')
                       OutlinedButton.icon(
-                        onPressed: _addOptionalMilestone,
-                        icon: const Icon(Icons.flag_outlined),
-                        label: const Text('Add Milestone'),
+                        onPressed: _resetJourney,
+                        icon: const Icon(Icons.refresh_outlined),
+                        label: const Text('Reset Progress'),
                       ),
-                  ],
-                ),
-              ],
+                      OutlinedButton.icon(
+                        onPressed: _startNewJourney,
+                        icon: const Icon(Icons.add_circle_outline),
+                        label: const Text('New Journey'),
+                      ),
+                      if (_selectedSubject == 'optional')
+                        OutlinedButton.icon(
+                          onPressed: _addChecklistToOptional,
+                          icon: const Icon(Icons.add_task_outlined),
+                          label: const Text('Add Checklist'),
+                        )
+                      else
+                        OutlinedButton.icon(
+                          onPressed: _addChecklistToOther,
+                          icon: const Icon(Icons.playlist_add_outlined),
+                          label: const Text('Add To OTHER'),
+                        ),
+                      if (_selectedSubject == 'optional')
+                        OutlinedButton.icon(
+                          onPressed: _addOptionalMilestone,
+                          icon: const Icon(Icons.flag_outlined),
+                          label: const Text('Add Milestone'),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
+          const SizedBox(height: 12),
+        ],
         _JourneyHeader(
           examName: _examNameController.text.trim(),
           template: template,
@@ -1073,79 +1190,146 @@ class _JourneyHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: template.softAccent,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 430;
+        final title = examName.isEmpty
+            ? '${template.subjectLabel} chapter checklist'
+            : '$examName • ${template.subjectLabel}';
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: template.softAccent,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
+              if (compact)
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      examName.isEmpty
-                          ? '${template.subjectLabel} chapter checklist'
-                          : '$examName • ${template.subjectLabel}',
-                      style:
-                          Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: template.accent,
-                              ),
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: template.accent,
+                          ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       template.subtitle,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: template.accent.withValues(alpha: 0.82),
                           ),
                     ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: template.accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        '$earnedXp / $totalXp XP',
+                        textScaler: MediaQuery.textScalerOf(context)
+                            .clamp(maxScaleFactor: 1.05),
+                        style: TextStyle(
+                          color: template.accent,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: template.accent,
+                                ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            template.subtitle,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  color:
+                                      template.accent.withValues(alpha: 0.82),
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: template.accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        '$earnedXp / $totalXp XP',
+                        textScaler: MediaQuery.textScalerOf(context)
+                            .clamp(maxScaleFactor: 1.05),
+                        style: TextStyle(
+                          color: template.accent,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
+              const SizedBox(height: 14),
+              LinearProgressIndicator(
+                value: progress.clamp(0.0, 1.0),
+                minHeight: 8,
+                borderRadius: BorderRadius.circular(20),
+                backgroundColor: template.accent.withValues(alpha: 0.12),
+                valueColor: AlwaysStoppedAnimation<Color>(template.accent),
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: template.accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(16),
-                ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
                 child: Text(
-                  '$earnedXp / $totalXp XP',
+                  '${(progress * 100).round()}%',
+                  textScaler: MediaQuery.textScalerOf(context)
+                      .clamp(maxScaleFactor: 1.1),
                   style: TextStyle(
                     color: template.accent,
                     fontWeight: FontWeight.w700,
+                    fontSize: 16,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          LinearProgressIndicator(
-            value: progress,
-            minHeight: 8,
-            borderRadius: BorderRadius.circular(20),
-            backgroundColor: template.accent.withValues(alpha: 0.12),
-            valueColor: AlwaysStoppedAnimation<Color>(template.accent),
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              '${(progress * 100).round()}%',
-              style: TextStyle(
-                color: template.accent,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

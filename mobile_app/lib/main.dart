@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'screens/home_screen.dart';
 import 'screens/sinovate_splash_screen.dart';
@@ -6,8 +9,26 @@ import 'services/focus_timer_service.dart';
 import 'services/local_store_service.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (Platform.isMacOS || Platform.isWindows) {
+    const mobileFrame = Size(450, 800); // Fixed 9:16 portrait window.
+    await windowManager.ensureInitialized();
+    const windowOptions = WindowOptions(
+      size: mobileFrame,
+      minimumSize: mobileFrame,
+      maximumSize: mobileFrame,
+      center: true,
+      titleBarStyle: TitleBarStyle.normal,
+    );
+    await windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.setResizable(false);
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  }
+
   runApp(const SchoolAssistantApp());
 }
 
@@ -203,7 +224,7 @@ class _FocusTimerOverlayState extends State<_FocusTimerOverlay> {
               final seconds =
                   (remaining.inSeconds % 60).toString().padLeft(2, '0');
 
-              const expandedSize = Size(172, 188);
+              const expandedSize = Size(188, 228);
               const minimizedSize = Size(72, 52);
               final boxSize = _minimized ? minimizedSize : expandedSize;
               _initPositionIfNeeded(constraints, boxSize.width);
@@ -244,33 +265,36 @@ class _FocusTimerOverlayState extends State<_FocusTimerOverlay> {
                             ],
                           ),
                           child: _minimized
-                              ? InkWell(
-                                  onTap: () {
-                                    setState(() => _minimized = false);
-                                  },
-                                  borderRadius: BorderRadius.circular(14),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    mainAxisSize: MainAxisSize.max,
-                                    children: [
-                                      Icon(
-                                        Icons.timer_outlined,
-                                        color: theme.colorScheme.primary,
-                                        size: 16,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Flexible(
-                                        child: Text(
-                                          '$minutes:$seconds',
-                                          style: theme.textTheme.labelSmall?.copyWith(
-                                            color: theme.colorScheme.primary,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                          softWrap: false,
+                              ? MouseRegion(
+                                  cursor: SystemMouseCursors.click,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () {
+                                      setState(() => _minimized = false);
+                                    },
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisSize: MainAxisSize.max,
+                                      children: [
+                                        Icon(
+                                          Icons.timer_outlined,
+                                          color: theme.colorScheme.primary,
+                                          size: 16,
                                         ),
-                                      ),
-                                    ],
+                                        const SizedBox(width: 6),
+                                        Flexible(
+                                          child: Text(
+                                            '$minutes:$seconds',
+                                            style: theme.textTheme.labelSmall?.copyWith(
+                                              color: theme.colorScheme.primary,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                            softWrap: false,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 )
                               : Column(
@@ -297,6 +321,11 @@ class _FocusTimerOverlayState extends State<_FocusTimerOverlay> {
                                           icon: const Icon(Icons.minimize, size: 18),
                                           tooltip: 'Minimize',
                                           visualDensity: VisualDensity.compact,
+                                          style: const ButtonStyle(
+                                            overlayColor: WidgetStatePropertyAll(
+                                              Colors.transparent,
+                                            ),
+                                          ),
                                           onPressed: () {
                                             setState(() => _minimized = true);
                                           },
@@ -327,6 +356,11 @@ class _FocusTimerOverlayState extends State<_FocusTimerOverlay> {
                                         onPressed: () => FocusTimerService.instance.stop(),
                                         icon: const Icon(Icons.stop_circle_outlined),
                                         label: const Text('Stop'),
+                                        style: const ButtonStyle(
+                                          overlayColor: WidgetStatePropertyAll(
+                                            Colors.transparent,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ],
