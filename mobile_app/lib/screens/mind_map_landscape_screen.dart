@@ -1037,13 +1037,15 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
       TransformationController();
   final GlobalKey _exportBoundaryKey = GlobalKey();
   final List<_DrawStroke> _strokes = <_DrawStroke>[];
-  final List<_DrawStroke> _redoStrokes = <_DrawStroke>[];
   final List<_DrawLabel> _labels = <_DrawLabel>[];
+  final List<_DrawingSnapshot> _undoSnapshots = <_DrawingSnapshot>[];
+  final List<_DrawingSnapshot> _redoSnapshots = <_DrawingSnapshot>[];
   bool _didInitialFit = false;
   String _lastLayoutFingerprint = '';
   Size? _lastViewportSize;
   bool _drawMode = false;
   bool _eraseMode = false;
+  bool _eraseSessionRecorded = false;
   bool _textMode = false;
   bool _showDrawPalette = false;
   _DrawStroke? _activeStroke;
@@ -1107,8 +1109,11 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
 
   void _loadDrawing(String jsonText) {
     _strokes.clear();
-    _redoStrokes.clear();
     _labels.clear();
+    _undoSnapshots.clear();
+    _redoSnapshots.clear();
+    _eraseSessionRecorded = false;
+    _activeStroke = null;
     if (jsonText.trim().isEmpty) {
       return;
     }
@@ -1168,23 +1173,67 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
     widget.onDrawingJsonChanged(serialized);
   }
 
+  _DrawingSnapshot _captureSnapshot() {
+    return _DrawingSnapshot(
+      strokes: _strokes.map(_copyStroke).toList(),
+      labels: _labels.map(_copyLabel).toList(),
+    );
+  }
+
+  _DrawStroke _copyStroke(_DrawStroke stroke) {
+    return _DrawStroke(
+      color: stroke.color,
+      width: stroke.width,
+      points: List<Offset>.from(stroke.points),
+    );
+  }
+
+  _DrawLabel _copyLabel(_DrawLabel label) {
+    return _DrawLabel(
+      text: label.text,
+      position: label.position,
+      color: label.color,
+      size: label.size,
+    );
+  }
+
+  void _restoreSnapshot(_DrawingSnapshot snapshot) {
+    _strokes
+      ..clear()
+      ..addAll(snapshot.strokes.map(_copyStroke));
+    _labels
+      ..clear()
+      ..addAll(snapshot.labels.map(_copyLabel));
+    _activeStroke = null;
+    _eraseSessionRecorded = false;
+  }
+
+  void _recordHistorySnapshot() {
+    _undoSnapshots.add(_captureSnapshot());
+    _redoSnapshots.clear();
+  }
+
   void _startStroke(Offset point) {
     if (_textMode) {
       return;
     }
     if (_eraseMode) {
+      if (!_eraseSessionRecorded) {
+        _recordHistorySnapshot();
+        _eraseSessionRecorded = true;
+      }
       _eraseAt(point);
       return;
     }
 
     setState(() {
+      _recordHistorySnapshot();
       _activeStroke = _DrawStroke(
         color: _strokeColor,
         width: _strokeWidth,
         points: <Offset>[point],
       );
       _strokes.add(_activeStroke!);
-      _redoStrokes.clear();
     });
   }
 
@@ -1210,6 +1259,7 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
       return;
     }
     if (_eraseMode) {
+      _eraseSessionRecorded = false;
       _commitDrawingChange();
       return;
     }
@@ -1222,39 +1272,45 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
     if (stroke.points.length < 2) {
       setState(() {
         _strokes.remove(stroke);
+        if (_undoSnapshots.isNotEmpty) {
+          _restoreSnapshot(_undoSnapshots.removeLast());
+        }
       });
       return;
     }
     _commitDrawingChange();
   }
 
-  void _undoStroke() {
-    if (_strokes.isEmpty) {
+  void _undoChange() {
+    if (_undoSnapshots.isEmpty) {
       return;
     }
     setState(() {
-      _redoStrokes.add(_strokes.removeLast());
+      _redoSnapshots.add(_captureSnapshot());
+      _restoreSnapshot(_undoSnapshots.removeLast());
     });
     _commitDrawingChange();
   }
 
-  void _redoStroke() {
-    if (_redoStrokes.isEmpty) {
+  void _redoChange() {
+    if (_redoSnapshots.isEmpty) {
       return;
     }
     setState(() {
-      _strokes.add(_redoStrokes.removeLast());
+      _undoSnapshots.add(_captureSnapshot());
+      _restoreSnapshot(_redoSnapshots.removeLast());
     });
     _commitDrawingChange();
   }
 
   void _clearStrokes() {
-    if (_strokes.isEmpty) {
+    if (_strokes.isEmpty && _labels.isEmpty) {
       return;
     }
     setState(() {
+      _recordHistorySnapshot();
       _strokes.clear();
-      _redoStrokes.clear();
+      _labels.clear();
       _activeStroke = null;
     });
     _commitDrawingChange();
@@ -1262,12 +1318,13 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
 
   void _eraseAt(Offset point) {
     final radius = (_strokeWidth * 3.2).clamp(10.0, 34.0);
-    final before = _strokes.length;
+    final beforeStrokes = _strokes.length;
+    final beforeLabels = _labels.length;
     _strokes.removeWhere(
       (stroke) => stroke.points.any((p) => (p - point).distance <= radius),
     );
     _labels.removeWhere((label) => (label.position - point).distance <= radius);
-    if (_strokes.length != before) {
+    if (_strokes.length != beforeStrokes || _labels.length != beforeLabels) {
       setState(() {});
     }
   }
@@ -1309,6 +1366,7 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
     }
 
     setState(() {
+      _recordHistorySnapshot();
       _labels.add(
         _DrawLabel(
           text: text.trim(),
@@ -1437,34 +1495,6 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
       ..forward();
   }
 
-  void _zoomBy(double factor, BoxConstraints constraints) {
-    final matrix = _transformController.value;
-    final currentScale = matrix.getMaxScaleOnAxis();
-    final targetScale = (currentScale * factor).clamp(0.12, 4.0);
-    if ((targetScale - currentScale).abs() < 0.001) {
-      return;
-    }
-
-    final tx = matrix.storage[12];
-    final ty = matrix.storage[13];
-    final viewportCenter = Offset(
-      constraints.maxWidth / 2,
-      constraints.maxHeight / 2,
-    );
-    final sceneCenter = Offset(
-      (viewportCenter.dx - tx) / currentScale,
-      (viewportCenter.dy - ty) / currentScale,
-    );
-    final nextTx = viewportCenter.dx - (sceneCenter.dx * targetScale);
-    final nextTy = viewportCenter.dy - (sceneCenter.dy * targetScale);
-
-    _animateTransformTo(
-      Matrix4.identity()
-        ..translateByDouble(nextTx, nextTy, 0, 1)
-        ..scaleByDouble(targetScale, targetScale, 1, 1),
-    );
-  }
-
   ui.Rect _contentBounds(List<_VisualNode> nodes) {
     if (nodes.isEmpty) {
       return const ui.Rect.fromLTWH(0, 0, 1, 1);
@@ -1573,7 +1603,7 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
             return;
           }
 
-            final nextX = xCenter + (direction * horizontalGapForDepth(depth));
+          final nextX = xCenter + (direction * horizontalGapForDepth(depth));
           final count = data.children.length;
           const siblingGap = 26.0;
           final childSpans = data.children
@@ -1655,8 +1685,7 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
           final total = spans.fold<double>(0, (sum, value) => sum + value) +
               siblingGap * (spans.length - 1);
           var cursorY = rootCenter.dy - (total / 2);
-          final childX =
-              rootCenter.dx + (direction * horizontalGapForDepth(0));
+          final childX = rootCenter.dx + (direction * horizontalGapForDepth(0));
 
           for (var i = 0; i < indices.length; i++) {
             final branchIndex = indices[i];
@@ -1721,6 +1750,26 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
                 : BorderRadius.circular(12),
             child: Stack(
               children: [
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: const BoxDecoration(
+                      gradient: RadialGradient(
+                        center: Alignment.center,
+                        radius: 1.2,
+                        colors: [
+                          Color(0xFFF6F9FF),
+                          Color(0xFFEAF0FF),
+                          Color(0xFFE1EAFF),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const Positioned.fill(
+                  child: CustomPaint(
+                    painter: _MindMapGridPainter(),
+                  ),
+                ),
                 Positioned.fill(
                   child: InteractiveViewer(
                     transformationController: _transformController,
@@ -1800,6 +1849,9 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
                                     left: entry.value.position.dx,
                                     top: entry.value.position.dy,
                                     child: GestureDetector(
+                                      onPanStart: (_) {
+                                        _recordHistorySnapshot();
+                                      },
                                       onPanUpdate: (details) {
                                         final label = _labels[entry.key];
                                         setState(() {
@@ -1815,6 +1867,7 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
                                       onPanEnd: (_) => _commitDrawingChange(),
                                       onDoubleTap: () {
                                         setState(() {
+                                          _recordHistorySnapshot();
                                           _labels.removeAt(entry.key);
                                         });
                                         _commitDrawingChange();
@@ -1942,24 +1995,13 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
                             ),
                             IconButton(
                               tooltip: 'Undo',
-                              onPressed: _undoStroke,
+                              onPressed: _undoChange,
                               icon: const Icon(Icons.undo, color: Colors.white),
                             ),
                             IconButton(
                               tooltip: 'Redo',
-                              onPressed: _redoStroke,
+                              onPressed: _redoChange,
                               icon: const Icon(Icons.redo, color: Colors.white),
-                            ),
-                            IconButton(
-                              tooltip: 'Zoom out',
-                              onPressed: () => _zoomBy(0.85, constraints),
-                              icon:
-                                  const Icon(Icons.remove, color: Colors.white),
-                            ),
-                            IconButton(
-                              tooltip: 'Zoom in',
-                              onPressed: () => _zoomBy(1.15, constraints),
-                              icon: const Icon(Icons.add, color: Colors.white),
                             ),
                           ],
                         ),
@@ -2024,24 +2066,14 @@ class _MindMapCanvasState extends State<_MindMapCanvas>
                                   label: const Text('Root +'),
                                 ),
                                 OutlinedButton.icon(
-                                  onPressed: _undoStroke,
+                                  onPressed: _undoChange,
                                   icon: const Icon(Icons.undo, size: 18),
                                   label: const Text('Undo'),
                                 ),
                                 OutlinedButton.icon(
-                                  onPressed: _redoStroke,
+                                  onPressed: _redoChange,
                                   icon: const Icon(Icons.redo, size: 18),
                                   label: const Text('Redo'),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: () => _zoomBy(0.85, constraints),
-                                  icon: const Icon(Icons.zoom_out, size: 18),
-                                  label: const Text('Zoom -'),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: () => _zoomBy(1.15, constraints),
-                                  icon: const Icon(Icons.zoom_in, size: 18),
-                                  label: const Text('Zoom +'),
                                 ),
                                 OutlinedButton.icon(
                                   onPressed: _clearStrokes,
@@ -2455,7 +2487,8 @@ class _MindMapEdgePainter extends CustomPainter {
       final path = Path()..moveTo(edge.from.dx, edge.from.dy);
       final dx = edge.to.dx - edge.from.dx;
       final controlOffset = dx.abs() * 0.42;
-      final controlX1 = edge.from.dx + (dx >= 0 ? controlOffset : -controlOffset);
+      final controlX1 =
+          edge.from.dx + (dx >= 0 ? controlOffset : -controlOffset);
       final controlX2 = edge.to.dx - (dx >= 0 ? controlOffset : -controlOffset);
       path.cubicTo(
         controlX1,
@@ -2644,6 +2677,16 @@ class _DrawLabel {
       };
 }
 
+class _DrawingSnapshot {
+  const _DrawingSnapshot({
+    required this.strokes,
+    required this.labels,
+  });
+
+  final List<_DrawStroke> strokes;
+  final List<_DrawLabel> labels;
+}
+
 _ParsedMindMap _parseMindMap(String topic, String content) {
   final lines = content
       .split(RegExp(r'\r?\n'))
@@ -2791,7 +2834,7 @@ class _InputLine {
 
     // Convert list-prefixed headings like "- ## Coulomb's Law" into proper headings.
     final headingInsideList =
-      RegExp(r'^(#{1,})\s+(.*)$').firstMatch(normalized);
+        RegExp(r'^(#{1,})\s+(.*)$').firstMatch(normalized);
     if (headingInsideList != null) {
       normalized =
           '${headingInsideList.group(1)!} ${headingInsideList.group(2)!.trim()}';
