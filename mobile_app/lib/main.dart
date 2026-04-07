@@ -13,7 +13,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   if (Platform.isMacOS || Platform.isWindows) {
-    const mobileFrame = Size(450, 800); // Fixed 9:16 portrait window.
+    const mobileFrame = Size(675, 1200); // Fixed 9:16 portrait window.
     await windowManager.ensureInitialized();
     const windowOptions = WindowOptions(
       size: mobileFrame,
