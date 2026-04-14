@@ -26,6 +26,13 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Flutter diagnostics
+        working-directory: mobile_app
+        run: |
+          New-Item -ItemType Directory -Force -Path ../artifacts | Out-Null
+          flutter --version
+          flutter doctor -v
+
       - name: Enable Windows desktop
         working-directory: mobile_app
         run: flutter config --enable-windows-desktop
@@ -36,7 +43,13 @@ jobs:
 
       - name: Build Windows release
         working-directory: mobile_app
-        run: flutter build windows --release
+        run: |
+          $buildLog = "../artifacts/flutter-build-windows.log"
+          flutter build windows --release -v 2>&1 | Tee-Object -FilePath $buildLog
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Flutter build failed. See $buildLog for full output."
+            exit $LASTEXITCODE
+          }
 
       - name: Create Windows zip artifact
         run: |
@@ -66,3 +79,11 @@ jobs:
           name: sinovate-windows-latest
           path: artifacts/sinovate-windows-latest.zip
           if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-log
+          path: artifacts/flutter-build-windows.log
+          if-no-files-found: warn
