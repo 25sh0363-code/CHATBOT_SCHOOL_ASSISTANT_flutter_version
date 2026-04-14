@@ -91,7 +91,7 @@ jobs:
 
       - name: Build Windows installer
         run: |
-          $releaseDir = "mobile_app/build/windows/x64/runner/Release"
+          $releaseDir = "${{ github.workspace }}\mobile_app\build\windows\x64\runner\Release"
           New-Item -ItemType Directory -Force -Path "artifacts" | Out-Null
           $installerLog = "artifacts/installer-build.log"
 
@@ -120,7 +120,7 @@ jobs:
             'AppVersion=1.0.0',
             'DefaultDirName={autopf}\SINOVATE',
             'DefaultGroupName=SINOVATE',
-            'OutputDir=artifacts',
+            "OutputDir=${{ github.workspace }}\artifacts",
             'OutputBaseFilename=sinovate-windows-installer',
             'Compression=lzma',
             'SolidCompression=yes',
@@ -130,7 +130,7 @@ jobs:
             'Name: "english"; MessagesFile: "compiler:Default.isl"',
             '',
             '[Files]',
-            "Source: `"$releaseDir\*`"; DestDir: `"{app}`"; Flags: recursesubdirs createallsubdirs ignoreversion",
+            "Source: `"$releaseDir\*`"; DestDir: ""{app}""; Flags: recursesubdirs createallsubdirs ignoreversion",
             '',
             '[Icons]',
             "Name: `"{autoprograms}\SINOVATE`"; Filename: `"{app}\$($exePath.Name)`"",
