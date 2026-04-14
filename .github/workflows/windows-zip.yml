@@ -86,12 +86,20 @@ jobs:
       - name: Build Windows installer
         run: |
           $releaseDir = "mobile_app/build/windows/x64/runner/Release"
+          New-Item -ItemType Directory -Force -Path "artifacts" | Out-Null
+          $installerLog = "artifacts/installer-build.log"
           $exePath = Get-ChildItem -Path $releaseDir -Filter *.exe -File | Select-Object -First 1
           if ($null -eq $exePath) {
             throw "No executable found for installer in $releaseDir"
           }
 
-          choco install innosetup --no-progress -y
+          $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $isccPath)) {
+            choco install innosetup --no-progress -y
+          }
+          if (!(Test-Path $isccPath)) {
+            throw "Inno Setup compiler not found at $isccPath"
+          }
 
           $issPath = "artifacts/sinovate-installer.iss"
           $issLines = @(
@@ -125,7 +133,11 @@ jobs:
           )
           $issLines | Set-Content -Path $issPath -Encoding utf8
 
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" $issPath
+          & $isccPath $issPath 2>&1 | Tee-Object -FilePath $installerLog
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Installer build failed. See $installerLog for details."
+            exit $LASTEXITCODE
+          }
 
       - name: Upload zip artifact
         uses: actions/upload-artifact@v4
@@ -148,3 +160,11 @@ jobs:
           name: sinovate-windows-installer
           path: artifacts/sinovate-windows-installer.exe
           if-no-files-found: error
+
+      - name: Upload installer log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-log
+          path: artifacts/installer-build.log
+          if-no-files-found: warn
