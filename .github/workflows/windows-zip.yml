@@ -119,7 +119,7 @@ jobs:
             'Name: "english"; MessagesFile: "compiler:Default.isl"',
             '',
             '[Files]',
-            "Source: \"$releaseDir\\*\"; DestDir: \"{app}\"; Flags: recursesubdirs createallsubdirs ignoreversion",
+            "Source: \"$$releaseDir\\*\"; DestDir: \"{app}\"; Flags: recursesubdirs createallsubdirs ignoreversion",
             '',
             '[Icons]',
             "Name: \"{autoprograms}\\SINOVATE\"; Filename: \"{app}\\$($exePath.Name)\"",
