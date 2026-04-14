@@ -94,6 +94,11 @@ jobs:
           $releaseDir = "mobile_app/build/windows/x64/runner/Release"
           New-Item -ItemType Directory -Force -Path "artifacts" | Out-Null
           $installerLog = "artifacts/installer-build.log"
+
+          if (!(Test-Path $releaseDir)) {
+            throw "Build output not found at $releaseDir"
+          }
+
           $exePath = Get-ChildItem -Path $releaseDir -Filter *.exe -File | Select-Object -First 1
           if ($null -eq $exePath) {
             throw "No executable found for installer in $releaseDir"
@@ -125,17 +130,17 @@ jobs:
             'Name: "english"; MessagesFile: "compiler:Default.isl"',
             '',
             '[Files]',
-            "Source: \"`$releaseDir\\*\"; DestDir: \"{app}\"; Flags: recursesubdirs createallsubdirs ignoreversion",
+            "Source: `"$releaseDir\*`"; DestDir: `"{app}`"; Flags: recursesubdirs createallsubdirs ignoreversion",
             '',
             '[Icons]',
-            "Name: \"{autoprograms}\\SINOVATE\"; Filename: \"{app}\\$($exePath.Name)\"",
-            "Name: \"{autodesktop}\\SINOVATE\"; Filename: \"{app}\\$($exePath.Name)\"; Tasks: desktopicon",
+            "Name: `"{autoprograms}\SINOVATE`"; Filename: `"{app}\$($exePath.Name)`"",
+            "Name: `"{autodesktop}\SINOVATE`"; Filename: `"{app}\$($exePath.Name)`"; Tasks: desktopicon",
             '',
             '[Tasks]',
             'Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"',
             '',
             '[Run]',
-            "Filename: \"{app}\\$($exePath.Name)\"; Description: \"Launch SINOVATE\"; Flags: nowait postinstall skipifsilent"
+            "Filename: `"{app}\$($exePath.Name)`"; Description: `"Launch SINOVATE`"; Flags: nowait postinstall skipifsilent"
           )
           $issLines | Set-Content -Path $issPath -Encoding utf8
 
