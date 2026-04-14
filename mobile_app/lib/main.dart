@@ -19,20 +19,37 @@ Future<void> main(List<String> args) async {
   final isSubWindow = args.isNotEmpty && args.first == 'multi_window';
 
   if ((Platform.isMacOS || Platform.isWindows) && !isSubWindow) {
-    const mobileFrame = Size(675, 1200);
     await windowManager.ensureInitialized();
-    final windowOptions = WindowOptions(
-      size: mobileFrame,
-      minimumSize: mobileFrame,
-      maximumSize: mobileFrame,
-      center: true,
-      titleBarStyle: TitleBarStyle.normal,
-    );
-    await windowManager.waitUntilReadyToShow(windowOptions, () async {
-      await windowManager.setResizable(false);
-      await windowManager.show();
-      await windowManager.focus();
-    });
+
+    if (Platform.isMacOS) {
+      const mobileFrame = Size(675, 1200);
+      final windowOptions = WindowOptions(
+        size: mobileFrame,
+        minimumSize: mobileFrame,
+        maximumSize: mobileFrame,
+        center: true,
+        titleBarStyle: TitleBarStyle.normal,
+      );
+      await windowManager.waitUntilReadyToShow(windowOptions, () async {
+        await windowManager.setResizable(false);
+        await windowManager.show();
+        await windowManager.focus();
+      });
+    } else if (Platform.isWindows) {
+      const initialFrame = Size(480, 860);
+      const minFrame = Size(420, 700);
+      final windowOptions = WindowOptions(
+        size: initialFrame,
+        minimumSize: minFrame,
+        center: true,
+        titleBarStyle: TitleBarStyle.normal,
+      );
+      await windowManager.waitUntilReadyToShow(windowOptions, () async {
+        await windowManager.setResizable(true);
+        await windowManager.show();
+        await windowManager.focus();
+      });
+    }
   }
 
   if (isSubWindow) {

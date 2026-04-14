@@ -83,6 +83,50 @@ jobs:
           Compress-Archive -Path "$releaseDir\*" -DestinationPath $zipPath -Force
           Write-Host "Created $zipPath"
 
+      - name: Build Windows installer
+        run: |
+          $releaseDir = "mobile_app/build/windows/x64/runner/Release"
+          $exePath = Get-ChildItem -Path $releaseDir -Filter *.exe -File | Select-Object -First 1
+          if ($null -eq $exePath) {
+            throw "No executable found for installer in $releaseDir"
+          }
+
+          choco install innosetup --no-progress -y
+
+          $issPath = "artifacts/sinovate-installer.iss"
+          $issLines = @(
+            '[Setup]',
+            'AppId={{7ABF6AE8-94D4-4F3B-A7C4-68F7B4F2F028}',
+            'AppName=SINOVATE',
+            'AppVersion=1.0.0',
+            'DefaultDirName={autopf}\SINOVATE',
+            'DefaultGroupName=SINOVATE',
+            'OutputDir=artifacts',
+            'OutputBaseFilename=sinovate-windows-installer',
+            'Compression=lzma',
+            'SolidCompression=yes',
+            'WizardStyle=modern',
+            '',
+            '[Languages]',
+            'Name: "english"; MessagesFile: "compiler:Default.isl"',
+            '',
+            '[Files]',
+            "Source: \"$releaseDir\\*\"; DestDir: \"{app}\"; Flags: recursesubdirs createallsubdirs ignoreversion",
+            '',
+            '[Icons]',
+            "Name: \"{autoprograms}\\SINOVATE\"; Filename: \"{app}\\$($exePath.Name)\"",
+            "Name: \"{autodesktop}\\SINOVATE\"; Filename: \"{app}\\$($exePath.Name)\"; Tasks: desktopicon",
+            '',
+            '[Tasks]',
+            'Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"',
+            '',
+            '[Run]',
+            "Filename: \"{app}\\$($exePath.Name)\"; Description: \"Launch SINOVATE\"; Flags: nowait postinstall skipifsilent"
+          )
+          $issLines | Set-Content -Path $issPath -Encoding utf8
+
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" $issPath
+
       - name: Upload zip artifact
         uses: actions/upload-artifact@v4
         with:
@@ -97,3 +141,10 @@ jobs:
           name: windows-build-log
           path: artifacts/flutter-build-windows.log
           if-no-files-found: warn
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sinovate-windows-installer
+          path: artifacts/sinovate-windows-installer.exe
+          if-no-files-found: error
