@@ -61,6 +61,12 @@ jobs:
             exit $LASTEXITCODE
           }
 
+      - name: Debug Release Directory
+        run: |
+          $releaseDir = "mobile_app/build/windows/x64/runner/Release"
+          Write-Host "Listing contents of $releaseDir"
+          Get-ChildItem -Path $releaseDir -Recurse
+
       - name: Create Windows zip artifact
         run: |
           $releaseDir = "mobile_app/build/windows/x64/runner/Release"
