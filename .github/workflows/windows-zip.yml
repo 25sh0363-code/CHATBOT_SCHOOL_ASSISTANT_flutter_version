@@ -10,6 +10,7 @@ on:
       - mobile_app/**
       - .github/workflows/windows-zip.yml
 
+jobs:
   build-windows-zip:
     runs-on: windows-latest
     defaults:
