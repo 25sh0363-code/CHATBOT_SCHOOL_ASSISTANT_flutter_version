@@ -37,6 +37,16 @@ jobs:
         working-directory: mobile_app
         run: flutter config --enable-windows-desktop
 
+      - name: Ensure Windows platform files
+        working-directory: mobile_app
+        run: |
+          if (!(Test-Path "windows")) {
+            Write-Host "Windows folder not found; generating platform files..."
+            flutter create --platforms=windows .
+          } else {
+            Write-Host "Windows platform folder already exists."
+          }
+
       - name: Flutter pub get
         working-directory: mobile_app
         run: flutter pub get
