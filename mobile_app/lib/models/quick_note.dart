@@ -34,6 +34,7 @@ class QuickNote {
     required this.createdAt,
     required this.updatedAt,
     this.attachments = const <QuickNoteAttachment>[],
+    this.isPinned = false,
   });
 
   final String id;
@@ -42,6 +43,7 @@ class QuickNote {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<QuickNoteAttachment> attachments;
+  final bool isPinned;
 
   QuickNote copyWith({
     String? topic,
@@ -49,6 +51,7 @@ class QuickNote {
     DateTime? createdAt,
     DateTime? updatedAt,
     List<QuickNoteAttachment>? attachments,
+    bool? isPinned,
   }) {
     return QuickNote(
       id: id,
@@ -57,6 +60,7 @@ class QuickNote {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       attachments: attachments ?? this.attachments,
+      isPinned: isPinned ?? this.isPinned,
     );
   }
 
@@ -68,6 +72,7 @@ class QuickNote {
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'attachments': attachments.map((item) => item.toJson()).toList(),
+      'isPinned': isPinned,
     };
   }
 
@@ -82,6 +87,7 @@ class QuickNote {
           .whereType<Map<String, dynamic>>()
           .map(QuickNoteAttachment.fromJson)
           .toList(),
+      isPinned: (json['isPinned'] ?? json['is_pinned']) as bool? ?? false,
     );
   }
 }

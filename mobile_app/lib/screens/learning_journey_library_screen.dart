@@ -78,7 +78,8 @@ class _LearningJourneyLibraryScreenState
     return (completed: completed, total: total);
   }
 
-  Future<void> _openJourney({String? journeyId, bool startFresh = false}) async {
+  Future<void> _openJourney(
+      {String? journeyId, bool startFresh = false}) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => Scaffold(
@@ -134,10 +135,26 @@ class _LearningJourneyLibraryScreenState
     return '$examLabel • ${progress.completed}/${progress.total} tasks';
   }
 
+  Color _subjectColor(String key, ThemeData theme) {
+    switch (key) {
+      case 'physics':
+        return const Color(0xFF1E5FA8);
+      case 'chemistry':
+        return const Color(0xFF9E4D2C);
+      case 'maths':
+        return const Color(0xFF4A49A7);
+      case 'biology':
+        return const Color(0xFF2F6E26);
+      default:
+        return theme.colorScheme.primary;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final latest = _journeys.isEmpty ? null : _journeys.first;
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.small(
@@ -154,8 +171,24 @@ class _LearningJourneyLibraryScreenState
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(28),
-                  color: theme.colorScheme.surface,
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                  gradient: LinearGradient(
+                    colors: [
+                      isDark
+                          ? theme.colorScheme.surfaceContainerHigh
+                          : theme.colorScheme.primaryContainer
+                              .withValues(alpha: 0.55),
+                      isDark
+                          ? theme.colorScheme.surface
+                          : theme.colorScheme.surface,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  border: Border.all(
+                    color: isDark
+                        ? theme.colorScheme.outlineVariant
+                        : theme.colorScheme.primary.withValues(alpha: 0.2),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -199,29 +232,57 @@ class _LearningJourneyLibraryScreenState
               if (_loading)
                 const Center(child: CircularProgressIndicator())
               else ...[
-                Card(
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor:
-                          Theme.of(context).colorScheme.primaryContainer,
-                      child: const Icon(Icons.route_rounded),
-                    ),
-                    title: Text(
-                      latest?.title ?? 'No saved journey yet',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      latest == null
-                          ? 'Tap + to create your first journey.'
-                          : _subtitleForRecord(latest),
-                    ),
-                    trailing: FilledButton(
-                      onPressed: latest == null
-                          ? () => _openJourney(startFresh: true)
-                          : () => _openJourney(journeyId: latest.id),
-                      child: Text(latest == null ? 'New' : 'Open'),
-                    ),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    color: theme.colorScheme.surface,
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: theme.colorScheme.primaryContainer,
+                        ),
+                        child: Icon(
+                          latest == null ? Icons.add_rounded : Icons.play_arrow,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              latest?.title ?? 'No saved journey yet',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              latest == null
+                                  ? 'Tap + to create your first journey.'
+                                  : _subtitleForRecord(latest),
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      FilledButton(
+                        onPressed: latest == null
+                            ? () => _openJourney(startFresh: true)
+                            : () => _openJourney(journeyId: latest.id),
+                        child: Text(latest == null ? 'New' : 'Resume'),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -248,6 +309,10 @@ class _LearningJourneyLibraryScreenState
                               ? subject
                               : record.title.trim())
                           : examName;
+                      final subjectColor = _subjectColor(record.subject, theme);
+                      final progressValue = progress.total == 0
+                          ? 0.0
+                          : progress.completed / progress.total;
 
                       return InkWell(
                         borderRadius: BorderRadius.circular(18),
@@ -256,20 +321,34 @@ class _LearningJourneyLibraryScreenState
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(18),
-                            color: theme.colorScheme.surface,
+                            gradient: LinearGradient(
+                              colors: [
+                                Color.alphaBlend(
+                                  subjectColor.withValues(alpha: 0.18),
+                                  theme.colorScheme.surface,
+                                ),
+                                theme.colorScheme.surface,
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
                             border: Border.all(
-                              color: theme.colorScheme.outlineVariant,
+                              color: Color.alphaBlend(
+                                subjectColor.withValues(alpha: 0.4),
+                                theme.colorScheme.outlineVariant,
+                              ),
                             ),
                           ),
                           child: Row(
                             children: [
                               CircleAvatar(
                                 radius: 20,
-                                backgroundColor: theme.colorScheme.primaryContainer,
+                                backgroundColor:
+                                    subjectColor.withValues(alpha: 0.18),
                                 child: Text(
                                   subject.substring(0, 1),
                                   style: TextStyle(
-                                    color: theme.colorScheme.primary,
+                                    color: subjectColor,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
@@ -284,24 +363,30 @@ class _LearningJourneyLibraryScreenState
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: theme.textTheme.titleMedium
-                                          ?.copyWith(fontWeight: FontWeight.w700),
+                                          ?.copyWith(
+                                              fontWeight: FontWeight.w700),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
                                       subject,
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: theme.colorScheme.onSurfaceVariant,
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
                                       ),
                                     ),
                                     const SizedBox(height: 8),
                                     LinearProgressIndicator(
-                                      value: progress.total == 0
-                                          ? 0
-                                          : progress.completed / progress.total,
+                                      value: progressValue,
+                                      minHeight: 8,
+                                      borderRadius: BorderRadius.circular(20),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        subjectColor,
+                                      ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      '${progress.completed}/${progress.total} tasks',
+                                      '${progress.completed}/${progress.total} tasks • ${(progressValue * 100).round()}%',
                                       style: theme.textTheme.labelMedium,
                                     ),
                                   ],

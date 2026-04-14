@@ -6,6 +6,7 @@ class WorksheetRecord {
     required this.topic,
     required this.createdAt,
     required this.questions,
+    this.isPinned = false,
   });
 
   final String id;
@@ -14,6 +15,26 @@ class WorksheetRecord {
   final String topic;
   final DateTime createdAt;
   final List<String> questions;
+  final bool isPinned;
+
+  WorksheetRecord copyWith({
+    String? title,
+    String? subject,
+    String? topic,
+    DateTime? createdAt,
+    List<String>? questions,
+    bool? isPinned,
+  }) {
+    return WorksheetRecord(
+      id: id,
+      title: title ?? this.title,
+      subject: subject ?? this.subject,
+      topic: topic ?? this.topic,
+      createdAt: createdAt ?? this.createdAt,
+      questions: questions ?? this.questions,
+      isPinned: isPinned ?? this.isPinned,
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -23,6 +44,7 @@ class WorksheetRecord {
       'topic': topic,
       'createdAt': createdAt.toIso8601String(),
       'questions': questions,
+      'isPinned': isPinned,
     };
   }
 
@@ -37,6 +59,7 @@ class WorksheetRecord {
       questions: rawQuestions is List
           ? rawQuestions.map((e) => e.toString()).toList()
           : <String>[],
+      isPinned: (json['isPinned'] ?? json['is_pinned']) as bool? ?? false,
     );
   }
 }

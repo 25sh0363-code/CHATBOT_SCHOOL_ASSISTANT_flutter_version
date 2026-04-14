@@ -25,6 +25,7 @@ class _TestsScreenState extends State<TestsScreen> {
     'Chemistry',
     'Math',
     'Biology',
+    'Optional',
     'Other'
   ];
 
@@ -286,12 +287,26 @@ class _TestsScreenState extends State<TestsScreen> {
       case 'chemistry':
         return const Color(0xFF00A6A6);
       case 'math':
+      case 'maths':
         return const Color(0xFF5F6AF2);
       case 'biology':
         return const Color(0xFF2DA562);
+      case 'optional':
+        return const Color(0xFF7A45C7);
       default:
         return const Color(0xFF4B6CB7);
     }
+  }
+
+  String _normalizeSubjectKey(String subject) {
+    final value = subject.trim().toLowerCase();
+    if (value == 'math') {
+      return 'maths';
+    }
+    if (value == 'other') {
+      return 'optional';
+    }
+    return value;
   }
 
   @override
@@ -302,6 +317,28 @@ class _TestsScreenState extends State<TestsScreen> {
         ? 0.0
         : scored.map((t) => t.percentage!).reduce((a, b) => a + b) /
             scored.length;
+    final subjectBuckets = <String, List<double>>{};
+    for (final test in scored) {
+      final key = _normalizeSubjectKey(test.subject);
+      subjectBuckets.putIfAbsent(key, () => <double>[]).add(test.percentage!);
+    }
+    final orderedSubjects = <String>[
+      'physics',
+      'chemistry',
+      'maths',
+      'biology',
+      'optional',
+    ];
+    final subjectAverages = <String, double>{};
+    for (final key in orderedSubjects) {
+      final scores = subjectBuckets[key] ?? const <double>[];
+      if (scores.isEmpty) {
+        subjectAverages[key] = 0;
+      } else {
+        final total = scores.reduce((a, b) => a + b);
+        subjectAverages[key] = total / scores.length;
+      }
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
@@ -551,44 +588,187 @@ class _TestsScreenState extends State<TestsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text('Subject-wise Scores',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 220,
+                  child: scored.isEmpty
+                      ? const Center(child: Text('No scored tests yet'))
+                      : BarChart(
+                          BarChartData(
+                            minY: 0,
+                            maxY: 100,
+                            gridData: const FlGridData(show: true),
+                            titlesData: FlTitlesData(
+                              rightTitles: const AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false)),
+                              topTitles: const AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false)),
+                              bottomTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  getTitlesWidget: (value, meta) {
+                                    const labels = <String>[
+                                      'Phy',
+                                      'Chem',
+                                      'Math',
+                                      'Bio',
+                                      'Opt'
+                                    ];
+                                    final index = value.toInt();
+                                    if (index < 0 || index >= labels.length) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: Text(labels[index]),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            barGroups:
+                                List.generate(orderedSubjects.length, (index) {
+                              final key = orderedSubjects[index];
+                              final score = subjectAverages[key] ?? 0;
+                              return BarChartGroupData(
+                                x: index,
+                                barRods: [
+                                  BarChartRodData(
+                                    toY: score,
+                                    width: 18,
+                                    borderRadius: BorderRadius.circular(6),
+                                    color: _subjectColor(key),
+                                  ),
+                                ],
+                              );
+                            }),
+                          ),
+                        ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    _SubjectLegendChip(
+                      label:
+                          'Physics ${subjectAverages['physics']!.toStringAsFixed(1)}%',
+                      color: _subjectColor('physics'),
+                    ),
+                    _SubjectLegendChip(
+                      label:
+                          'Chemistry ${subjectAverages['chemistry']!.toStringAsFixed(1)}%',
+                      color: _subjectColor('chemistry'),
+                    ),
+                    _SubjectLegendChip(
+                      label:
+                          'Maths ${subjectAverages['maths']!.toStringAsFixed(1)}%',
+                      color: _subjectColor('maths'),
+                    ),
+                    _SubjectLegendChip(
+                      label:
+                          'Biology ${subjectAverages['biology']!.toStringAsFixed(1)}%',
+                      color: _subjectColor('biology'),
+                    ),
+                    _SubjectLegendChip(
+                      label:
+                          'Optional ${subjectAverages['optional']!.toStringAsFixed(1)}%',
+                      color: _subjectColor('optional'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text('Performance Trend',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
                 SizedBox(
-                  height: 210,
-                  child: scored.isEmpty
-                      ? const Center(child: Text('No scored tests yet'))
-                      : LineChart(
-                          LineChartData(
-                            minY: 0,
-                            maxY: 100,
-                            gridData: const FlGridData(show: true),
-                            titlesData: const FlTitlesData(
-                              rightTitles: AxisTitles(
-                                  sideTitles: SideTitles(showTitles: false)),
-                              topTitles: AxisTitles(
-                                  sideTitles: SideTitles(showTitles: false)),
-                            ),
-                            lineBarsData: [
-                              LineChartBarData(
-                                spots: [
-                                  for (int i = 0; i < scored.length; i++)
-                                    FlSpot(i.toDouble(),
-                                        scored[i].percentage ?? 0),
-                                ],
-                                isCurved: true,
-                                barWidth: 3,
-                                color: scheme.primary,
-                                dotData: const FlDotData(show: true),
+                  width: double.infinity,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      gradient: LinearGradient(
+                        colors: [
+                          scheme.primaryContainer.withValues(alpha: 0.92),
+                          scheme.secondaryContainer.withValues(alpha: 0.86),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: scored.isEmpty
+                        ? const Text('No scored tests yet')
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Overall Performance',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                '${avg.toStringAsFixed(1)}%',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineMedium
+                                    ?.copyWith(fontWeight: FontWeight.w900),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                avg >= 85
+                                    ? 'Excellent consistency. Keep this rhythm strong.'
+                                    : avg >= 60
+                                        ? 'Solid progress. Keep practicing to push your average higher.'
+                                        : 'Strong comeback starts now. One focused test at a time.',
+                                style: Theme.of(context).textTheme.bodyMedium,
                               ),
                             ],
                           ),
-                        ),
+                  ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SubjectLegendChip extends StatelessWidget {
+  const _SubjectLegendChip({
+    required this.label,
+    required this.color,
+  });
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: color.withValues(alpha: 0.12),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

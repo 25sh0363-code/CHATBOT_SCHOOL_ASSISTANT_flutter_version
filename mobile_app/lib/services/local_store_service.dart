@@ -90,7 +90,12 @@ class LocalStoreService {
         // Skip malformed older entries instead of failing the whole save/load flow.
       }
     }
-    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    list.sort((a, b) {
+      if (a.isPinned != b.isPinned) {
+        return a.isPinned ? -1 : 1;
+      }
+      return b.createdAt.compareTo(a.createdAt);
+    });
     return list;
   }
 
@@ -205,7 +210,12 @@ class LocalStoreService {
         // Skip malformed older entries instead of failing the whole save/load flow.
       }
     }
-    list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    list.sort((a, b) {
+      if (a.isPinned != b.isPinned) {
+        return a.isPinned ? -1 : 1;
+      }
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
     return list;
   }
 

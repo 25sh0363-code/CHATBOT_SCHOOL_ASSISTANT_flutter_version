@@ -10,9 +10,11 @@ class WorksheetsLibraryScreen extends StatefulWidget {
   const WorksheetsLibraryScreen({
     super.key,
     required this.storeService,
+    this.embedded = false,
   });
 
   final LocalStoreService storeService;
+  final bool embedded;
 
   @override
   State<WorksheetsLibraryScreen> createState() =>
@@ -21,6 +23,17 @@ class WorksheetsLibraryScreen extends StatefulWidget {
 
 class _WorksheetsLibraryScreenState extends State<WorksheetsLibraryScreen> {
   List<WorksheetRecord> _worksheets = <WorksheetRecord>[];
+
+  List<WorksheetRecord> get _orderedWorksheets {
+    final list = List<WorksheetRecord>.from(_worksheets);
+    list.sort((a, b) {
+      if (a.isPinned != b.isPinned) {
+        return a.isPinned ? -1 : 1;
+      }
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return list;
+  }
 
   @override
   void initState() {
@@ -76,7 +89,8 @@ class _WorksheetsLibraryScreenState extends State<WorksheetsLibraryScreen> {
                                 .withValues(alpha: 0.5),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: Theme.of(context).colorScheme.outlineVariant,
+                              color:
+                                  Theme.of(context).colorScheme.outlineVariant,
                             ),
                           ),
                           child: Column(
@@ -93,13 +107,17 @@ class _WorksheetsLibraryScreenState extends State<WorksheetsLibraryScreen> {
                                   ),
                                   const Spacer(),
                                   IconButton(
-                                    icon: const Icon(Icons.copy_outlined, size: 18),
+                                    icon: const Icon(Icons.copy_outlined,
+                                        size: 18),
                                     tooltip: 'Copy question',
                                     onPressed: () {
-                                      Clipboard.setData(ClipboardData(text: question));
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      Clipboard.setData(
+                                          ClipboardData(text: question));
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
                                         const SnackBar(
-                                          content: Text('Question copied to clipboard'),
+                                          content: Text(
+                                              'Question copied to clipboard'),
                                           duration: Duration(seconds: 1),
                                         ),
                                       );
@@ -124,7 +142,8 @@ class _WorksheetsLibraryScreenState extends State<WorksheetsLibraryScreen> {
                                       .textTheme
                                       .labelLarge
                                       ?.copyWith(fontWeight: FontWeight.w700),
-                                  tableBody: Theme.of(context).textTheme.bodyMedium,
+                                  tableBody:
+                                      Theme.of(context).textTheme.bodyMedium,
                                 ),
                               ),
                             ],
@@ -142,166 +161,205 @@ class _WorksheetsLibraryScreenState extends State<WorksheetsLibraryScreen> {
     );
   }
 
+  Future<void> _togglePin(WorksheetRecord sheet) async {
+    setState(() {
+      _worksheets = _worksheets
+          .map(
+            (item) => item.id == sheet.id
+                ? item.copyWith(isPinned: !item.isPinned)
+                : item,
+          )
+          .toList();
+    });
+    await widget.storeService.saveWorksheets(_worksheets);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final content = RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.primaryContainer,
+                    child: Icon(
+                      Icons.assignment_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Worksheets',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Practice sets you can reopen and reuse quickly.',
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          const SizedBox(height: 12),
+          if (_worksheets.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Text(
+                  'No worksheets saved yet.',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _orderedWorksheets.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1,
+              ),
+              itemBuilder: (context, index) {
+                final sheet = _orderedWorksheets[index];
+                return InkWell(
+                  borderRadius: BorderRadius.circular(22),
+                  onTap: () => _showWorksheet(sheet),
+                  child: Container(
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      color: Theme.of(context).colorScheme.surface,
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.10),
+                          blurRadius: 14,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer,
+                              child: Icon(
+                                Icons.assignment_outlined,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                            const Spacer(),
+                            IconButton(
+                              tooltip: sheet.isPinned
+                                  ? 'Unpin worksheet'
+                                  : 'Pin worksheet',
+                              icon: Icon(
+                                sheet.isPinned
+                                    ? Icons.push_pin_rounded
+                                    : Icons.push_pin_outlined,
+                                color: sheet.isPinned
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                size: 20,
+                              ),
+                              onPressed: () => _togglePin(sheet),
+                            ),
+                            Icon(
+                              Icons.chevron_right,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        Text(
+                          sheet.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${sheet.subject} • ${sheet.questions.length} questions',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          const SizedBox(height: 60),
+        ],
+      ),
+    );
+
+    if (widget.embedded) {
+      return content;
+    }
+
     return Scaffold(
       floatingActionButton: FloatingActionButton.small(
         onPressed: _openStudio,
         child: const Icon(Icons.add),
       ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor:
-                          Theme.of(context).colorScheme.primaryContainer,
-                      child: Icon(Icons.assignment_rounded,
-                          color: Theme.of(context).colorScheme.primary),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Worksheets',
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Practice sets you can reopen and reuse quickly.',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            const SizedBox(height: 12),
-            if (_worksheets.isEmpty)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Text(
-                    'No worksheets saved yet.',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ),
-              )
-            else
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _worksheets.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  childAspectRatio: 1,
-                ),
-                itemBuilder: (context, index) {
-                  final sheet = _worksheets[index];
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(22),
-                    onTap: () => _showWorksheet(sheet),
-                    child: Container(
-                      padding: const EdgeInsets.all(15),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(22),
-                        color: Theme.of(context).colorScheme.surface,
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withValues(alpha: 0.10),
-                            blurRadius: 14,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 18,
-                                backgroundColor: Theme.of(context)
-                                    .colorScheme
-                                    .primaryContainer,
-                                child: Icon(Icons.assignment_outlined,
-                                    size: 18,
-                                    color:
-                                        Theme.of(context).colorScheme.primary),
-                              ),
-                              const Spacer(),
-                              Icon(Icons.chevron_right,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant),
-                            ],
-                          ),
-                          const Spacer(),
-                          Text(
-                            sheet.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${sheet.subject} • ${sheet.questions.length} questions',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            const SizedBox(height: 60),
-          ],
-        ),
-      ),
+      body: content,
     );
   }
 }

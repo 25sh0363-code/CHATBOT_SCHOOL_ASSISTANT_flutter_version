@@ -1,0 +1,144 @@
+name: Build Release Artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - mobile_app/**
+      - .github/workflows/windows-zip.yml
+
+jobs:
+  build-android-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: mobile_app
+        run: flutter pub get
+
+      - name: Build Android APK
+        working-directory: mobile_app
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sinovate-android-apk
+          path: mobile_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+  build-macos-zip:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable macOS desktop
+        working-directory: mobile_app
+        run: flutter config --enable-macos-desktop
+
+      - name: Flutter pub get
+        working-directory: mobile_app
+        run: flutter pub get
+
+      - name: Build macOS release app
+        working-directory: mobile_app
+        run: flutter build macos --release
+
+      - name: Create macOS zip artifact
+        working-directory: mobile_app
+        run: |
+          mkdir -p artifacts
+          release_dir="build/macos/Build/Products/Release"
+          app_path=$(find "$release_dir" -maxdepth 1 -name "*.app" -print -quit)
+          if [ -z "$app_path" ]; then
+            echo "No .app bundle found under $release_dir"
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" artifacts/sinovate-macos-release.zip
+
+      - name: Upload macOS zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sinovate-macos-release
+          path: mobile_app/artifacts/sinovate-macos-release.zip
+          if-no-files-found: error
+
+  build-windows-zip:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        working-directory: mobile_app
+        run: flutter config --enable-windows-desktop
+
+      - name: Flutter pub get
+        working-directory: mobile_app
+        run: flutter pub get
+
+      - name: Build Windows release
+        working-directory: mobile_app
+        run: flutter build windows --release
+
+      - name: Create Windows zip artifact
+        run: |
+          $releaseDir = "mobile_app/build/windows/x64/runner/Release"
+          if (!(Test-Path $releaseDir)) {
+            throw "Build output not found at $releaseDir"
+          }
+
+          $exePath = Get-ChildItem -Path $releaseDir -Filter *.exe -File | Select-Object -First 1
+          if ($null -eq $exePath) {
+            throw "No executable found in $releaseDir"
+          }
+          Write-Host "Detected executable: $($exePath.FullName)"
+
+          New-Item -ItemType Directory -Force -Path "artifacts" | Out-Null
+          $zipPath = "artifacts/sinovate-windows-latest.zip"
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath $zipPath
+          Write-Host "Created $zipPath"
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sinovate-windows-latest
+          path: artifacts/sinovate-windows-latest.zip
+          if-no-files-found: error

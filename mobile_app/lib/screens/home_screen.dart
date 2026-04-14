@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 
 import '../services/local_store_service.dart';
@@ -164,16 +166,58 @@ class _HomeDashboard extends StatefulWidget {
 }
 
 class _HomeDashboardState extends State<_HomeDashboard> {
+  final Connectivity _connectivity = Connectivity();
   int _upcomingExamCount = 0;
   int _loginStreakDays = 0;
   String _name = 'Student';
   Uint8List? _avatarBytes;
   List<_ChatWindowPreview> _recentChatWindows = <_ChatWindowPreview>[];
+  bool _isOnline = true;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
+    _initConnectivity();
     _loadSummary();
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initConnectivity() async {
+    final initial = await _connectivity.checkConnectivity();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isOnline = _isConnected(initial);
+    });
+
+    _connectivitySubscription =
+        _connectivity.onConnectivityChanged.listen((results) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isOnline = _isConnected(results);
+      });
+    });
+  }
+
+  bool _isConnected(List<ConnectivityResult> results) {
+    if (results.isEmpty) {
+      return false;
+    }
+    for (final result in results) {
+      if (result != ConnectivityResult.none) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Future<void> _loadSummary() async {
@@ -538,12 +582,16 @@ class _HomeDashboardState extends State<_HomeDashboard> {
                 const Spacer(),
                 Icon(
                   Icons.circle,
-                  color: isDark ? const Color(0xFF48A7FF) : scheme.primary,
+                  color: _isOnline
+                      ? (isDark ? const Color(0xFF48A7FF) : scheme.primary)
+                      : (isDark
+                          ? const Color(0xFFE06C75)
+                          : scheme.error),
                   size: 9,
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Online',
+                  _isOnline ? 'Online' : 'Offline',
                   style: TextStyle(
                     color: isDark
                         ? const Color(0xFFD4DBE6)
