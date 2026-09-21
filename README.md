@@ -64,9 +64,9 @@ SINOVATE is a cross-platform study assistant built for students. It brings toget
 | | | |
 |:---:|:---:|:---:|
 | **AI Tutor** | **Smart Notes** | **Learning Journey** |
-| ![AI Tutor](screenshots/ai_tutor.png) | ![Notes](screenshots/notes.png) | ![Journey](screenshots/journey.png) |
+| ![AI Tutor](ai_tutor.png) | ![Notes](notes.png) | ![Journey](journey.png) |
 | **Mind Map Studio** | **Study Planner** | **Leaderboard** |
-| ![Mind Map](screenshots/mind_map.png) | ![Planner](screenshots/planner.png) | ![Leaderboard](screenshots/leaderboard.png) |
+| ![Mind Map](mind_map.png) | ![Planner](planner.png) | ![Leaderboard](leaderboard.png) |
 
 ## 🛠 Tech Stack
 
